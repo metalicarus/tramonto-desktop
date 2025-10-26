@@ -109,7 +109,7 @@ export default defineConfig((ctx) => {
       // directives: [],
 
       // Quasar plugins
-      plugins: [],
+      plugins: ['Notify', 'Dialog', 'Loading'],
     },
 
     // animations: 'all', // --- includes all animations
@@ -178,7 +178,12 @@ export default defineConfig((ctx) => {
 
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/developing-electron-apps/configuring-electron
     electron: {
-      // extendElectronMainConf (esbuildConf) {},
+      // extendElectronMainConf(cfg) {
+      //   cfg.define = {
+      //     ...cfg.define,
+      //     'process.env.ELECTRON_DISABLE_SANDBOX': JSON.stringify('1'),
+      //   }
+      // },
       // extendElectronPreloadConf (esbuildConf) {},
 
       // extendPackageJson (json) {},
