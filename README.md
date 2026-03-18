@@ -1,3 +1,11 @@
+```
+____________________________  ______________   _______________ 
+___  __/__  __ \__    |__   |/  /_  __ \__  | / /__  __/_  __ \
+__  /  __  /_/ /_  /| |_  /|_/ /_  / / /_   |/ /__  /  _  / / /
+_  /   _  _, _/_  ___ |  /  / / / /_/ /_  /|  / _  /   / /_/ / 
+/_/    /_/ |_| /_/  |_/_/  /_/  \____/ /_/ |_/  /_/    \____/  
+```
+
 # Tramonto
 
 > A privacy-first pentest management tool for security professionals. Built to run offline, sync via GitHub, and never expose sensitive client data.
