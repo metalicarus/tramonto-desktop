@@ -1,1 +1,19 @@
-// app global css in SCSS form
+.layout-wrapper {
+  position: fixed;
+  top: 32px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.q-layout {
+  height: 100%;
+}
+
+.q-page-container {
+  overflow-y: auto !important;
+  height: calc(100vh - 32px - 45px) !important;
+}
+.q-notifications__list {
+  margin-top: 32px !important;
+}

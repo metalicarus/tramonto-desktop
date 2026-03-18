@@ -27,3 +27,16 @@
  *   }
  * }
  */
+const { contextBridge, ipcRenderer } = require('electron')
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  getBaseDir: () => ipcRenderer.invoke('fs:getBaseDir'),
+  gitSync: (projectDir, token, repoUrl, message) =>
+    ipcRenderer.invoke('git:fullSync', projectDir, token, repoUrl, message),
+  minimize: () => ipcRenderer.invoke('win:minimize'),
+  maximize: () => ipcRenderer.invoke('win:maximize'),
+  close: () => ipcRenderer.invoke('win:close'),
+  writeEncryptedFile: (path, content) => ipcRenderer.invoke('fs:writeEncryptedFile', path, content),
+  gitClone: (repoUrl, token, destDir) => ipcRenderer.invoke('git:clone', repoUrl, token, destDir),
+  readDir: (dirPath) => ipcRenderer.invoke('fs:readDir', dirPath),
+})
