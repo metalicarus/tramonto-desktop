@@ -1,96 +1,178 @@
 // src/stores/project.js
+
+/**
+ * @typedef {'production'|'approval'|'staging'} Environment
+ * @typedef {'planning'|'in_progress'|'completed'} ProjectStatus
+ * @typedef {'not_test'|'tested'|'na'|'in_progress'} ControllerStatus
+ * @typedef {'passed'|'not_pass'|null} ControllerResult
+ * @typedef {'critical'|'high'|'medium'|'low'|'info'} Severity
+ * @typedef {'aberto'|'em_remediacao'|'remediado'|'aceito_risco'} VulnStatus
+ */
+
+/**
+ * @typedef {Object} Project
+ * @property {string} id
+ * @property {string} name
+ * @property {string} customer
+ * @property {string} start_date
+ * @property {string} end_date
+ * @property {Environment} environment
+ * @property {ProjectStatus} status
+ * @property {string[]} team
+ * @property {string} created_by
+ * @property {string} created_at
+ * @property {string} updated_at
+ */
+
+/**
+ * @typedef {Object} Controller
+ * @property {string} id
+ * @property {string} project_id
+ * @property {string} phase_id
+ * @property {string} phase_name
+ * @property {string} controller
+ * @property {string} objective
+ * @property {string} how_to_test
+ * @property {ControllerStatus} status
+ * @property {ControllerResult} result
+ * @property {string} warning_signs
+ * @property {string|null} tester
+ * @property {string|null} test_date
+ * @property {string|null} updated_at
+ * @property {boolean} synced
+ * @property {Array<{description: string, result: ControllerResult}>} sub_tests
+ * @property {string[]} related_vulnerabilities
+ */
+
+/**
+ * @typedef {Object} Evidence
+ * @property {'screenshot'|'log'|'video'} type
+ * @property {string} name
+ * @property {string} path
+ * @property {string} hash
+ */
+
+/**
+ * @typedef {Object} Vulnerability
+ * @property {string} id
+ * @property {string} project_id
+ * @property {string} title
+ * @property {string} description
+ * @property {Severity} severity
+ * @property {number|null} cvss
+ * @property {string} cvss_vector
+ * @property {string} phase
+ * @property {string} controller_id
+ * @property {string} impact
+ * @property {string} recommendation
+ * @property {VulnStatus} status
+ * @property {string} cwe
+ * @property {string} owasp
+ * @property {string} tester
+ * @property {string} discovery_date
+ * @property {string} updated_at
+ * @property {Evidence[]} evidence
+ * @property {boolean} synced
+ */
+
+/**
+ * @typedef {Object} SyncStatus
+ * @property {boolean} syncing
+ * @property {Date|null} lastSync
+ * @property {number} unsyncedChanges
+ * @property {string|null} error
+ */
+
+/**
+ * @typedef {Object} Settings
+ * @property {string|null} githubToken
+ * @property {string|null} userEmail
+ * @property {string|null} userName
+ * @property {number} autoSyncInterval
+ */
+
+/**
+ * @typedef {Object} ProjectState
+ * @property {Project|null} currentProject
+ * @property {string} repository_url
+ * @property {Record<string, Controller>} controllers
+ * @property {Record<string, Vulnerability>} vulnerabilities
+ * @property {Project[]} projects
+ * @property {SyncStatus} syncStatus
+ * @property {Settings} settings
+ */
+
 import { defineStore } from 'pinia'
 import { v4 as uuidv4 } from 'uuid'
 import {
   saveItem,
   loadItem,
   loadAll,
-  loadControlesByProject,
-  loadVulnerabilidadesByProject,
-  countUnsyncedItems,
+  loadcontrollersByProject,
+  loadvulnerabilitiesByProject,
+  countUnsyncedItems, deleteItem,
 } from 'src/utils/storage'
-// import { writeJSONFile, initProjectStructure } from 'src/utils/git'
-import { ProjectMetadata, ControlesTemplate } from 'src/schemas/project'
+import { ProjectMetadata, ControllersTemplate } from 'src/schemas/project'
+import {toRaw} from "vue";
+import {useAuthStore} from "stores/auth.js";
 
 export const useProjectStore = defineStore('project', {
+  /** @returns {ProjectState} */
   state: () => ({
-    // Projeto atual
     currentProject: null,
-
-    // Controles do projeto atual
-    controles: {},
-
-    // Vulnerabilidades do projeto atual
-    vulnerabilidades: {},
-
-    // Lista de todos os projetos
+    controllers: {},
+    vulnerabilities: {},
     projects: [],
-
-    // Estado de sincronização
     syncStatus: {
       syncing: false,
       lastSync: null,
       unsyncedChanges: 0,
       error: null,
     },
-
-    // Configurações
-    settings: {
-      githubToken: null,
-      userEmail: null,
-      userName: null,
-      autoSyncInterval: 300000, // 5 minutos
+    globalSettings: {
+      _autoCommitTimer: null,
+      _autoSyncTimer: null,
+      _autoSyncInterval: 300000,
     },
-
-    // Timer para auto-commit
-    _autoCommitTimer: null,
-    _autoSyncTimer: null,
   }),
 
   getters: {
-    // Controles agrupados por fase
-    controlesByFase: (state) => {
+    controllersByPhase: (state) => {
       const grouped = {}
-      Object.values(state.controles).forEach((controle) => {
-        const faseId = controle.fase_id
-        if (!grouped[faseId]) {
-          grouped[faseId] = []
+      Object.values(state.controllers).forEach((controller) => {
+        const phase_id = controller.phase_id
+        if (!grouped[phase_id]) {
+          grouped[phase_id] = []
         }
-        grouped[faseId].push(controle)
+        grouped[phase_id].push(controller)
       })
-
-      // Ordenar controles por ID dentro de cada fase
-      Object.keys(grouped).forEach((faseId) => {
-        grouped[faseId].sort((a, b) => a.id.localeCompare(b.id))
+      Object.keys(grouped).forEach((phase_id) => {
+        grouped[phase_id].sort((a, b) => a.id.localeCompare(b.id))
       })
-
       return grouped
     },
 
-    // Métricas do projeto
     projectMetrics: (state) => {
-      const controles = Object.values(state.controles)
-      const vulns = Object.values(state.vulnerabilidades)
-
+      const controllers = Object.values(state.controllers)
+      const vulns = Object.values(state.vulnerabilities)
       return {
-        total_controles: controles.length,
-        testados: controles.filter((c) => c.status === 'testado').length,
-        passou: controles.filter((c) => c.resultado === 'passou').length,
-        nao_passou: controles.filter((c) => c.resultado === 'nao_passou').length,
-        nao_testado: controles.filter((c) => c.status === 'nao_testado').length,
-        em_progresso: controles.filter((c) => c.status === 'em_progresso').length,
-        vulnerabilidades: {
-          criticas: vulns.filter((v) => v.severidade === 'critica').length,
-          altas: vulns.filter((v) => v.severidade === 'alta').length,
-          medias: vulns.filter((v) => v.severidade === 'media').length,
-          baixas: vulns.filter((v) => v.severidade === 'baixa').length,
-          info: vulns.filter((v) => v.severidade === 'info').length,
+        total_controllers: controllers.length,
+        tested: controllers.filter((c) => c.status === 'tested').length,
+        passed: controllers.filter((c) => c.result === 'passed').length,
+        not_pass: controllers.filter((c) => c.result === 'not_pass').length,
+        not_test: controllers.filter((c) => c.status === 'not_test').length,
+        in_progress: controllers.filter((c) => c.status === 'in_progress').length,
+        vulnerabilities: {
+          criticisms: vulns.filter((v) => v.severity === 'critical').length,
+          highs: vulns.filter((v) => v.severity === 'high').length,
+          mediums: vulns.filter((v) => v.severity === 'medium').length,
+          lows: vulns.filter((v) => v.severity === 'low').length,
+          info: vulns.filter((v) => v.severity === 'info').length,
           total: vulns.length,
         },
       }
     },
 
-    // Verifica se há mudanças não sincronizadas
     hasUnsyncedChanges: (state) => {
       return state.syncStatus.unsyncedChanges > 0
     },
@@ -110,229 +192,240 @@ export const useProjectStore = defineStore('project', {
     async loadProject(projectId) {
       try {
         this.currentProject = await loadItem('projects', projectId)
-
         if (!this.currentProject) {
-          throw new Error('Projeto não encontrado')
+          throw new Error('Project not found')
         }
-
-        const controles = await loadControlesByProject(projectId)
-        this.controles = {}
-        controles.forEach((c) => {
-          this.controles[c.id] = c
+        if (!this.currentProject.settings) {
+          this.currentProject.settings = {
+            githubToken: null,
+            userEmail: null,
+            userName: null,
+            repository_url: null,
+          }
+        }
+        const controllers = await loadcontrollersByProject(projectId)
+        this.controllers = {}
+        controllers.forEach((c) => {
+          this.controllers[c.id] = c
         })
 
-        const vulns = await loadVulnerabilidadesByProject(projectId)
-        this.vulnerabilidades = {}
+        const vulns = await loadvulnerabilitiesByProject(projectId)
+        this.vulnerabilities = {}
         vulns.forEach((v) => {
-          this.vulnerabilidades[v.id] = v
+          this.vulnerabilities[v.id] = v
         })
-
         await this.updateUnsyncedCount()
-
-        console.log(`✅ Projeto carregado: ${this.currentProject.nome}`)
       } catch (error) {
-        console.error('Erro ao carregar projeto:', error)
+        console.error('Erro on load project:', error)
         throw error
       }
     },
 
     async createProject(projectData) {
       const projectId = uuidv4()
-
       const project = {
         ...ProjectMetadata,
         ...projectData,
         id: projectId,
-        criado_em: new Date().toISOString(),
-        atualizado_em: new Date().toISOString(),
-        criado_por: this.settings.userEmail,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        created_by: this.currentProject.settings.userEmail,
       }
 
       await saveItem('projects', project)
-
-      for (const templateControle of ControlesTemplate) {
-        const controle = {
-          ...templateControle,
-          id: `${projectId}_${templateControle.id}`,
+      for (const templateController of ControllersTemplate) {
+        const controller = {
+          ...templateController,
+          id: `${projectId}_${templateController.id}`,
           project_id: projectId,
           synced: false,
         }
-        await saveItem('controles', controle)
+        await saveItem('controllers', controller)
       }
-
-      // if (this.settings.githubToken && projectData.repositorio_url) {
-      //   await initProjectStructure(projectId)
-      // }
-
       await this.loadProjects()
-
-      console.log(`✅ Projeto criado: ${project.nome}`)
+      console.log(`✅ Project created: ${project.name}`)
       return project
     },
 
-    async saveControle(controleId, updates) {
-      const controle = {
-        ...this.controles[controleId],
-        ...updates,
-        data_atualizacao: new Date().toISOString(),
-        synced: false,
+    async importProject(repoUrl, token) {
+      const authStore = useAuthStore()
+      if (!authStore.masterPassword) {
+        throw new Error('App is locked')
       }
 
-      this.controles[controleId] = controle
-      await saveItem('controles', controle)
-      await this.updateUnsyncedCount()
-      this.scheduleAutoCommit()
+      const { getBaseDir, cloneRepo, readDir } = await import('../utils/fileSystem/index.js')
+      const { decrypt } = await import('../utils/crypto.js')
 
-      console.log(`💾 Controle salvo: ${controleId}`)
+      const baseDir = await getBaseDir()
+      const repoName = repoUrl.split('/').pop().replace('.git', '')
+      const destDir = `${baseDir}/${repoName}`
+
+      await cloneRepo(repoUrl, token, destDir)
+      const files = await readDir(destDir)
+      let project = null
+      const controllers = []
+      const vulns = []
+
+      for (const file of files) {
+        const decrypted = await decrypt(file.content, authStore.masterPassword)
+        if (file.path.endsWith('project.json')) {
+          project = decrypted
+        } else if (file.path.includes('/controllers/')) {
+          controllers.push(decrypted)
+        } else if (file.path.includes('/vulnerabilities/')) {
+          vulns.push(decrypted)
+        }
+      }
+      if (!project) throw new Error('Invalid repository — project.json not found')
+      project.settings = {
+        ...project.settings,
+        githubToken: token,
+        githubProject: repoUrl,
+        repoDir: repoName
+      }
+      await saveItem('projects', project)
+      for (const controller of controllers) {
+        await saveItem('controllers', { ...controller, synced: true })
+      }
+      for (const vuln of vulns) {
+        await saveItem('vulnerabilities', { ...vuln, synced: true })
+      }
+      await this.loadProjects()
+      return project
     },
 
-    async saveVulnerabilidade(vulnId, data) {
+    async saveController(controleId, updates) {
+      const controller = {
+        ...this.controllers[controleId],
+        ...updates,
+        updated_at: new Date().toISOString(),
+        synced: false,
+      }
+      this.controllers[controleId] = controller
+      await saveItem('controllers', controller)
+      await this.updateUnsyncedCount()
+      console.log(`💾 Controller saved: ${controleId}`)
+    },
+
+    async deleteVulnerability(vulnId) {
+      delete this.vulnerabilities[vulnId]
+      await deleteItem('vulnerabilities', vulnId)
+      await this.updateUnsyncedCount()
+    },
+
+    async saveVulnerability(vulnId, data) {
       const vuln = {
         ...data,
         id: vulnId || `VULN-${uuidv4().slice(0, 8)}`,
         project_id: this.currentProject.id,
-        data_atualizacao: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
         synced: false,
       }
-
-      this.vulnerabilidades[vuln.id] = vuln
-      await saveItem('vulnerabilidades', vuln)
+      this.vulnerabilities[vuln.id] = vuln
+      await saveItem('vulnerabilities', vuln)
       await this.updateUnsyncedCount()
-      this.scheduleAutoCommit()
-
-      console.log(`💾 Vulnerabilidade salva: ${vuln.id}`)
+      console.log(`💾 Vulnerability saved: ${vuln.id}`)
       return vuln
     },
-
-    async writeProjectFiles() {
-      // const projectId = this.currentProject.id
-
-      try {
-        // await writeJSONFile(projectId, 'projeto.json', {
-        //   ...this.currentProject,
-        //   metricas: this.projectMetrics,
-        //   atualizado_em: new Date().toISOString(),
-        // })
-
-        // const controlesByFase = this.controlesByFase
-        // for (const [faseId, controles] of Object.entries(controlesByFase)) {
-        //   for (const controle of controles) {
-        //     const faseNome = this.getFaseFolder(faseId)
-        //     const filename = `${controle.id}.json`
-        //     await writeJSONFile(projectId, `controles/${faseNome}/${filename}`, controle)
-        //   }
-        // }
-
-        // for (const vuln of Object.values(this.vulnerabilidades)) {
-        //   await writeJSONFile(projectId, `vulnerabilidades/${vuln.id}.json`, vuln)
-        // }
-
-        console.log('✅ Arquivos JSON escritos no filesystem')
-      } catch (error) {
-        console.error('Erro ao escrever arquivos:', error)
-        throw error
-      }
-    },
-
-    async autoCommit() {
-      if (!this.currentProject) return
-
-      try {
-        await this.writeProjectFiles()
-
-        // const result = await commitLocal(
-        //   this.currentProject.id,
-        //   `[Auto-save] ${new Date().toISOString()}`,
-        //   {
-        //     name: this.settings.userName || 'Pentest Manager',
-        //     email: this.settings.userEmail || 'pentest@manager.app',
-        //   },
-        // )
-
-        // if (result.success && result.files > 0) {
-        //   console.log(`✅ Auto-commit: ${result.files} arquivos`)
-        // }
-      } catch (error) {
-        console.error('Erro no auto-commit:', error)
-      }
-    },
-
     async syncWithGitHub() {
-      if (!this.currentProject || !this.settings.githubToken) {
-        throw new Error('Projeto ou token GitHub não configurado')
+      if (!this.currentProject || !this.currentProject.settings.githubToken) {
+        throw new Error('Project or access token not configured')
+      }
+
+      const authStore = useAuthStore()
+      if (!authStore.masterPassword) {
+        throw new Error('App is locked')
       }
 
       this.syncStatus.syncing = true
       this.syncStatus.error = null
 
       try {
-        await this.writeProjectFiles()
+        const { encrypt } = await import('../utils/crypto.js')
+        const { getBaseDir, writeEncryptedJSONFile } = await import('../utils/fileSystem/index.js')
+        const { fullSync } = await import('../utils/git/index.js')
 
-        // const result = await fullSync(
-        //   this.currentProject.id,
-        //   this.settings.githubToken,
-        //   `Sync: ${this.settings.userEmail} - ${new Date().toISOString()}`,
-        // )
+        const password = authStore.masterPassword
+        const projectSlug = this.currentProject.name
+          .toLowerCase()
+          .replace(/\s+/g, '-')
+          .replace(/[^a-z0-9-]/g, '')
 
-        // if (result.success) {
-        //   await this.markAllAsSynced()
+        const baseDir = await getBaseDir()
+        const repoDir = this.currentProject.settings.repoDir || `${projectSlug}-${this.currentProject.id}`
+        const projectDir = `${baseDir}/${repoDir}`
+        await writeEncryptedJSONFile(
+          `${projectDir}/project.json`,
+          await encrypt({ ...this.currentProject, metrics: this.projectMetrics }, password)
+        )
 
-        //   this.syncStatus.lastSync = new Date()
-        //   this.syncStatus.unsyncedChanges = 0
+        for (const [phaseId, controllers] of Object.entries(this.controllersByPhase)) {
+          const phaseFolder = this.getFaseFolder(phaseId)
+          for (const controller of controllers) {
+            await writeEncryptedJSONFile(
+              `${projectDir}/controllers/${phaseFolder}/${controller.id}.json`,
+              await encrypt(toRaw(controller), password)
+            )
+          }
+        }
 
-        //   console.log('✅ Sincronização com GitHub completa')
-        //   return { success: true, message: 'Sincronizado com sucesso' }
-        // } else if (result.conflicts) {
-        //   this.syncStatus.error = 'Conflitos detectados'
-        //   return { success: false, conflicts: true, message: result.message }
-        // } else {
-        //   throw new Error(result.message)
-        // }
+        for (const vuln of Object.values(this.vulnerabilities)) {
+          await writeEncryptedJSONFile(
+            `${projectDir}/vulnerabilities/${vuln.id}.json`,
+            await encrypt(toRaw(vuln), password)
+          )
+        }
+
+        const result = await fullSync(
+          projectDir,
+          this.currentProject.settings.githubToken,
+          this.currentProject.settings.githubProject,
+          `Sync: ${this.currentProject.settings.userEmail} - ${new Date().toISOString()}`,
+        )
+
+        if (result.success) {
+          await this.markAllAsSynced()
+          this.syncStatus.lastSync = new Date()
+          this.syncStatus.unsyncedChanges = 0
+          return { success: true, message: 'Synchronized with success' }
+        }
+
       } catch (error) {
-        console.error('Erro na sincronização:', error)
         this.syncStatus.error = error.message
         return { success: false, message: error.message }
       } finally {
         this.syncStatus.syncing = false
       }
     },
-
     async markAllAsSynced() {
-      for (const controle of Object.values(this.controles)) {
-        controle.synced = true
-        await saveItem('controles', controle)
+      for (const controller of Object.values(toRaw(this.controllers))) {
+        const raw = { ...toRaw(controller), synced: true }
+        await saveItem('controllers', raw)
       }
 
-      for (const vuln of Object.values(this.vulnerabilidades)) {
-        vuln.synced = true
-        await saveItem('vulnerabilidades', vuln)
+      for (const vuln of Object.values(toRaw(this.vulnerabilities))) {
+        const raw = { ...toRaw(vuln), synced: true }
+        await saveItem('vulnerabilities', raw)
       }
+      this.currentProject.settings_synced = true
+      await saveItem('projects', JSON.parse(JSON.stringify(this.currentProject)))
     },
 
     async updateUnsyncedCount() {
       if (!this.currentProject) return
-
-      const controles = await countUnsyncedItems('controles', this.currentProject.id)
-      const vulns = await countUnsyncedItems('vulnerabilidades', this.currentProject.id)
-
-      this.syncStatus.unsyncedChanges = controles + vulns
-    },
-
-    scheduleAutoCommit() {
-      clearTimeout(this._autoCommitTimer)
-      this._autoCommitTimer = setTimeout(() => {
-        this.autoCommit()
-      }, 30000)
+      const controllers = await countUnsyncedItems('controllers', this.currentProject.id)
+      const vulns = await countUnsyncedItems('vulnerabilities', this.currentProject.id)
+      const settingsUnsynced = this.currentProject.settings_synced === false ? 1 : 0
+      this.syncStatus.unsyncedChanges = controllers + vulns + settingsUnsynced
     },
 
     startAutoSync() {
-      if (this._autoSyncTimer) return
-
-      this._autoSyncTimer = setInterval(() => {
-        if (this.hasUnsyncedChanges && this.settings.githubToken) {
+      if (this.globalSettings._autoSyncTimer) return
+      this.globalSettings._autoSyncTimer = setInterval(() => {
+        if (this.hasUnsyncedChanges && this.currentProject.settings.githubToken) {
           console.log('⏰ Auto-sync agendado')
         }
-      }, this.settings.autoSyncInterval)
+      }, this.globalSettings._autoSyncInterval)
     },
 
     stopAutoSync() {
@@ -342,15 +435,15 @@ export const useProjectStore = defineStore('project', {
       }
     },
 
-    getFaseFolder(faseId) {
+    getFaseFolder(phaseId) {
       const folders = {
-        1: '1-reconhecimento',
-        2: '2-autenticacao',
-        3: '3-autorizacao',
-        4: '4-sessao',
+        1: '1-recognition',
+        2: '2-authentication',
+        3: '3-authorization',
+        4: '4-session',
         5: '5-input-validation',
       }
-      return folders[faseId] || faseId
+      return folders[phaseId] || phaseId
     },
 
     async loadSettings() {
@@ -358,7 +451,11 @@ export const useProjectStore = defineStore('project', {
     },
 
     async saveSettings(newSettings) {
-      this.settings = { ...this.settings, ...newSettings }
+      this.currentProject.settings = { ...this.currentProject.settings, ...newSettings }
+      this.currentProject.settings_synced = false
+      this.syncStatus.unsyncedChanges = false
+      await saveItem('projects', JSON.parse(JSON.stringify(this.currentProject)))
+      console.log(`💾 Setting updated`)
     },
   },
 })

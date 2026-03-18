@@ -1,184 +1,121 @@
 <template>
-  <q-layout view="hHh lpR fFf">
-    <!-- Header -->
-    <q-header elevated class="bg-primary text-white">
-      <q-toolbar>
-        <q-toolbar-title>
-          <q-icon name="security" size="sm" class="q-mr-sm" />
-          Pentest Manager
-        </q-toolbar-title>
+  <title-bar style="position: fixed; top: 0; left: 0; right: 0; z-index: 9999;" />
+  <div class="layout-wrapper">
 
-        <!-- Seletor de Projeto -->
-        <q-select
-          v-model="currentProjectId"
-          :options="projectOptions"
-          label="Projeto"
-          dark
-          outlined
-          dense
-          style="min-width: 300px"
-          @update:model-value="changeProject"
-        >
-          <template v-slot:prepend>
-            <q-icon name="folder" />
-          </template>
-        </q-select>
+    <q-layout view="hHh lpR fFf">
 
-        <q-space />
+      <q-page-container>
+        <dashboard v-if="store.currentProject" />
+        <div v-else class="flex flex-center" style="height: 80vh">
+          <div class="text-center">
+            <q-icon name="folder_open" size="100px" color="grey-5" />
+            <div class="text-h5 text-grey-7 q-mt-md">Project not selected</div>
+            <q-btn color="primary" label="Criar Novo Projeto" class="q-mt-md" @click="showNewProjectDialog = true" />
+          </div>
+        </div>
+      </q-page-container>
 
-        <!-- Indicador de Status -->
-        <div class="row items-center q-gutter-sm q-mr-md">
-          <q-icon :name="syncIcon" :color="syncIconColor" size="sm">
-            <q-tooltip>{{ syncTooltip }}</q-tooltip>
-          </q-icon>
-          <span class="text-caption">
+      <q-footer style="height: 45px">
+        <q-toolbar>
+          <q-space />
+
+          <q-btn flat round dense size="md" icon="report" @click="showReportDialog = true">
+            <q-tooltip>Generate Report</q-tooltip>
+          </q-btn>
+
+          <q-btn flat round dense size="md" icon="download" @click="exportBackup">
+            <q-tooltip>Export Backup</q-tooltip>
+          </q-btn>
+
+          <q-btn flat round dense icon="add" size="md" @click="showNewProjectDialog = true">
+            <q-tooltip>New Project</q-tooltip>
+          </q-btn>
+
+          <q-select v-model="currentProjectId"
+                    :options="projectOptions"
+                    label="Project"
+                    outlined
+                    dense
+                    style="width: 300px"
+                    dark
+                    color="white"
+                    @update:model-value="changeProject"
+          >
+            <template v-slot:prepend>
+              <q-icon name="folder"  />
+            </template>
+          </q-select>
+          <div class="row items-center q-gutter-sm q-mr-md">
+            <q-icon :name="syncIcon" :color="syncIconColor" size="sm">
+              <q-tooltip>{{ syncTooltip }}</q-tooltip>
+            </q-icon>
+            <span class="text-caption">
             {{ lastSyncText }}
           </span>
-        </div>
-
-        <!-- Botões de Ação -->
-        <q-btn flat round dense icon="add" @click="showNewProjectDialog = true">
-          <q-tooltip>Novo Projeto</q-tooltip>
-        </q-btn>
-
-        <q-btn flat round dense icon="download" @click="exportBackup">
-          <q-tooltip>Exportar Backup</q-tooltip>
-        </q-btn>
-      </q-toolbar>
-    </q-header>
-
-    <!-- Conteúdo Principal -->
-    <q-page-container>
-      <dashboard v-if="store.currentProject" />
-
-      <div v-else class="flex flex-center" style="height: 80vh">
-        <div class="text-center">
-          <q-icon name="folder_open" size="100px" color="grey-5" />
-          <div class="text-h5 text-grey-7 q-mt-md">Nenhum projeto selecionado</div>
-          <q-btn
-            color="primary"
-            label="Criar Novo Projeto"
-            class="q-mt-md"
-            @click="showNewProjectDialog = true"
-          />
-        </div>
-      </div>
-    </q-page-container>
-
-    <!-- Dialog: Novo Projeto -->
-    <q-dialog v-model="showNewProjectDialog">
-      <q-card style="min-width: 600px">
-        <q-card-section class="bg-primary text-white">
-          <div class="text-h6">Novo Projeto de Pentest</div>
-        </q-card-section>
-
-        <q-card-section>
-          <q-input
-            v-model="newProjectForm.nome"
-            label="Nome do Projeto *"
-            outlined
-            class="q-mb-md"
-            :rules="[(val) => !!val || 'Campo obrigatório']"
-          />
-
-          <q-input
-            v-model="newProjectForm.cliente"
-            label="Cliente *"
-            outlined
-            class="q-mb-md"
-            :rules="[(val) => !!val || 'Campo obrigatório']"
-          />
-
-          <div class="row q-col-gutter-md q-mb-md">
-            <div class="col-6">
-              <q-input
-                v-model="newProjectForm.data_inicio"
-                label="Data de Início"
-                type="date"
-                outlined
-              />
-            </div>
-            <div class="col-6">
-              <q-input
-                v-model="newProjectForm.data_fim"
-                label="Data de Término"
-                type="date"
-                outlined
-              />
-            </div>
           </div>
 
-          <q-select
-            v-model="newProjectForm.ambiente"
-            :options="ambienteOptions"
-            label="Ambiente"
-            outlined
-            class="q-mb-md"
-          />
+        </q-toolbar>
+      </q-footer>
 
-          <q-input
-            v-model="newProjectForm.repositorio_url"
-            label="URL do Repositório GitHub (opcional)"
-            outlined
-            hint="Ex: https://github.com/usuario/repo-pentest.git"
-          />
-        </q-card-section>
+      <!-- Dialog: Novo Projeto -->
+      <q-dialog v-model="showNewProjectDialog">
+        <project-editor @starting-project-creation="setLoading" @created-project="setNewProject" />
+      </q-dialog>
 
-        <q-card-actions align="right">
-          <q-btn flat label="Cancelar" v-close-popup />
-          <q-btn
-            color="primary"
-            label="Criar Projeto"
-            @click="createNewProject"
-            :disable="!isFormValid"
-          />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
+      <q-dialog v-model="showMasterPasswordDialog" persistent>
+        <master-password-setup  @configured="showMasterPasswordDialog = false" />
+      </q-dialog>
 
-    <!-- Loading Overlay -->
-    <q-inner-loading :showing="loading">
-      <q-spinner-gears size="50px" color="primary" />
-    </q-inner-loading>
-  </q-layout>
+      <q-dialog v-model="showUnlockDialog" persistent>
+        <unlock-dialog @unlocked="onUnlocked" />
+      </q-dialog>
+
+      <q-dialog v-model="showReportDialog" persistent>
+        <report-generator />
+      </q-dialog>
+
+      <!-- Loading Overlay -->
+      <q-inner-loading :showing="loading">
+        <q-spinner-gears size="50px" color="primary" />
+      </q-inner-loading>
+    </q-layout>
+  </div>
+
+
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import {ref, computed, onMounted} from 'vue'
 import { useProjectStore } from 'stores/project'
 import { useQuasar } from 'quasar'
 import Dashboard from 'pages/DashboardInitialPage.vue'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-// import { exportDatabase } from 'src/utils/storage'
+import ProjectEditor from "components/ProjectEditor.vue";
+import TitleBar from "components/TitleBar.vue";
+import {useAuthStore} from "stores/auth.js";
+import MasterPasswordSetup from "components/MasterPasswordSetup.vue";
+import UnlockDialog from "components/UnlockDialog.vue";
+import ReportGenerator from "components/ReportGenerator.vue";
 
 const $q = useQuasar()
 const store = useProjectStore()
 
+const authStore = useAuthStore()
+const showUnlockDialog = ref(false)
+const showMasterPasswordDialog = ref(false)
 const loading = ref(false)
-const showNewProjectDialog = ref(false)
+const showNewProjectDialog = ref(false);
+const showReportDialog = ref(false);
+
 const currentProjectId = ref(null)
 
-const newProjectForm = ref({
-  nome: '',
-  cliente: '',
-  data_inicio: '',
-  data_fim: '',
-  ambiente: 'homologacao',
-  repositorio_url: '',
-})
-
-const ambienteOptions = ['homologacao', 'producao', 'staging', 'desenvolvimento']
 
 const projectOptions = computed(() => {
   return store.projects.map((p) => ({
-    label: `${p.nome} - ${p.cliente}`,
+    label: `${p.name} - ${p.customer}`,
     value: p.id,
   }))
-})
-
-const isFormValid = computed(() => {
-  return newProjectForm.value.nome && newProjectForm.value.cliente
 })
 
 const syncIcon = computed(() => {
@@ -196,16 +133,16 @@ const syncIconColor = computed(() => {
 })
 
 const syncTooltip = computed(() => {
-  if (store.syncStatus.syncing) return 'Sincronizando...'
-  if (store.syncStatus.error) return `Erro: ${store.syncStatus.error}`
+  if (store.syncStatus.syncing) return 'Syncronization...'
+  if (store.syncStatus.error) return `Error: ${store.syncStatus.error}`
   if (store.hasUnsyncedChanges) {
-    return `${store.syncStatus.unsyncedChanges} mudanças não sincronizadas`
+    return `${store.syncStatus.unsyncedChanges} not syncronized changes`
   }
-  return 'Tudo sincronizado'
+  return 'All syncronized'
 })
 
 const lastSyncText = computed(() => {
-  if (!store.syncStatus.lastSync) return 'Nunca sincronizado'
+  if (!store.syncStatus.lastSync) return 'Never syncronized'
 
   try {
     return formatDistanceToNow(store.syncStatus.lastSync, {
@@ -217,63 +154,35 @@ const lastSyncText = computed(() => {
   }
 })
 
+function setNewProject(project) {
+  showNewProjectDialog.value = !showNewProjectDialog.value;
+  currentProjectId.value = project.id
+  changeProject(currentProjectId);
+}
 async function changeProject(projectId) {
   if (!projectId) return
-
   loading.value = true
   try {
-    await store.loadProject(projectId)
+    await store.loadProject(projectId.value)
     $q.notify({
-      type: 'positive',
-      message: `Projeto "${store.currentProject.nome}" carregado`,
-      icon: 'folder_open',
-    })
-  } catch (error) {
-    $q.notify({
-      type: 'negative',
-      message: `Erro ao carregar projeto: ${error.message}`,
-      icon: 'error',
-    })
-  } finally {
-    loading.value = false
-  }
-}
-
-async function createNewProject() {
-  loading.value = true
-
-  try {
-    const project = await store.createProject(newProjectForm.value)
-
-    $q.notify({
-      type: 'positive',
-      message: 'Projeto criado com sucesso!',
+      message: `Project "${store.currentProject.name}" loaded`,
       icon: 'check_circle',
+      iconColor: 'green'
     })
-
-    newProjectForm.value = {
-      nome: '',
-      cliente: '',
-      data_inicio: '',
-      data_fim: '',
-      ambiente: 'homologacao',
-      repositorio_url: '',
-    }
-
-    showNewProjectDialog.value = false
-
-    currentProjectId.value = project.id
-    await store.loadProject(project.id)
   } catch (error) {
     $q.notify({
-      type: 'negative',
-      message: `Erro ao criar projeto: ${error.message}`,
+      message: `Error on load project: ${error.message}`,
       icon: 'error',
+      iconColor: 'red'
     })
   } finally {
     loading.value = false
   }
 }
+function setLoading(newLoadingValue){
+  loading.value = newLoadingValue;
+}
+
 
 async function exportBackup() {
   try {
@@ -287,17 +196,23 @@ async function exportBackup() {
     console.error(error)
   }
 }
-
+async function onUnlocked() {
+  showUnlockDialog.value = false
+  await store.init()
+}
 onMounted(async () => {
   loading.value = true
-
   try {
-    await store.init()
+    await authStore.init()
 
-    if (store.projects.length > 0) {
-      currentProjectId.value = store.projects[0].id
-      await store.loadProject(currentProjectId.value)
+    if (!authStore.isConfigured) {
+      showMasterPasswordDialog.value = true
+    } else {
+      showUnlockDialog.value = true
+      return
     }
+
+    await store.init()
   } catch (error) {
     console.error('Erro na inicialização:', error)
     $q.notify({

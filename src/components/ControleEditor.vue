@@ -1,8 +1,9 @@
 <template>
   <q-card class="controle-editor">
     <q-card-section class="bg-primary text-white">
-      <div class="text-h6">Controle {{ controle.id }} - {{ controle.controle }}</div>
-      <div class="text-subtitle2">{{ controle.fase_nome }}</div>
+      <div class="text-h6">{{ controller.controller }}</div>
+      <div class="text-subtitle2">Controller ID: {{ controller.id }}</div>
+      <div class="text-subtitle2">{{ controller.phase_name }}</div>
     </q-card-section>
 
     <q-separator />
@@ -10,15 +11,15 @@
     <q-card-section>
       <!-- Objetivo -->
       <div class="q-mb-md">
-        <div class="text-subtitle1 text-weight-bold q-mb-sm">Objetivo</div>
-        <div class="text-body2 text-grey-8">{{ controle.objetivo }}</div>
+        <div class="text-subtitle1 text-weight-bold q-mb-sm">Objective</div>
+        <div class="text-body2 text-grey-8">{{ controller.objective }}</div>
       </div>
 
       <!-- Como Testar -->
       <div class="q-mb-md">
-        <div class="text-subtitle1 text-weight-bold q-mb-sm">Como Testar</div>
+        <div class="text-subtitle1 text-weight-bold q-mb-sm">How to test</div>
         <div class="text-body2 text-grey-8" style="white-space: pre-wrap">
-          {{ controle.como_testar }}
+          {{ controller.how_to_test }}
         </div>
       </div>
 
@@ -30,7 +31,7 @@
           <q-select
             v-model="localData.status"
             :options="statusOptions"
-            label="Status do Teste"
+            label="Status"
             outlined
             emit-value
             map-options
@@ -44,33 +45,33 @@
 
         <div class="col-12 col-md-6">
           <q-select
-            v-model="localData.resultado"
+            v-model="localData.result"
             :options="resultadoOptions"
-            label="Resultado"
+            label="Result"
             outlined
             emit-value
             map-options
-            :disable="localData.status !== 'testado'"
+            :disable="localData.status !== 'tested'"
             @update:model-value="handleResultadoChange"
           >
             <template v-slot:prepend>
-              <q-icon :name="getResultadoIcon(localData.resultado)" />
+              <q-icon :name="getResultadoIcon(localData.result)" />
             </template>
           </q-select>
         </div>
       </div>
 
       <!-- Subtestes (se existirem) -->
-      <div v-if="controle.subtestes && controle.subtestes.length > 0" class="q-mb-md">
-        <div class="text-subtitle1 text-weight-bold q-mb-sm">Subtestes</div>
+      <div v-if="controller.sub_tests && controller.sub_tests.length > 0" class="q-mb-md">
+        <div class="text-subtitle1 text-weight-bold q-mb-sm">Subtests</div>
         <q-list bordered separator>
-          <q-item v-for="(subteste, index) in localData.subtestes" :key="index">
+          <q-item v-for="(sub_test, index) in localData.sub_tests" :key="index">
             <q-item-section>
-              <q-item-label>{{ subteste.descricao }}</q-item-label>
+              <q-item-label>{{ sub_test.description }}</q-item-label>
             </q-item-section>
             <q-item-section side>
               <q-select
-                v-model="subteste.resultado"
+                v-model="sub_test.result"
                 :options="resultadoSubtesteOptions"
                 dense
                 outlined
@@ -87,8 +88,8 @@
       <!-- Pontos de Atenção -->
       <div class="q-mb-md">
         <q-input
-          v-model="localData.pontos_atencao"
-          label="Pontos de Atenção"
+          v-model="localData.warnings"
+          label="Warnings"
           type="textarea"
           outlined
           rows="3"
@@ -100,8 +101,8 @@
       <div class="row q-col-gutter-md">
         <div class="col-12 col-md-6">
           <q-input
-            v-model="localData.testador"
-            label="Testador"
+            v-model="localData.tester"
+            label="Tester"
             outlined
             readonly
             :value="userEmail"
@@ -112,90 +113,118 @@
           </q-input>
         </div>
         <div class="col-12 col-md-6">
-          <q-input v-model="dataTesteFormatted" label="Data do Teste" outlined readonly>
+          <q-input v-model="dataTesteFormatted" label="Date of test" outlined readonly>
             <template v-slot:prepend>
               <q-icon name="event" />
             </template>
           </q-input>
         </div>
       </div>
-
-      <!-- Botão de Criar Vulnerabilidade -->
-      <div v-if="localData.resultado === 'nao_passou'" class="q-mt-md">
+      <div v-if="localData.result === 'not_pass'" class="q-mt-md">
         <q-btn
           color="negative"
           icon="bug_report"
-          label="Registrar Vulnerabilidade"
-          @click="$emit('create-vulnerability', controle)"
+          label="Add Vulnerability"
+          @click="$emit('create-vulnerability', controller)"
         />
+        <q-table
+          :rows="rows"
+          :columns="columns"
+          row-key="id"
+          flat
+        >
+          <template v-slot:body-cell-actions="props">
+            <q-td key="actions" :props="props">
+              <q-btn icon="delete"
+                     color="red"
+                     size="sm"
+                     outline
+                     round
+                     @click="deleteVulnerability(props.row.id)"
+              />
+            </q-td>
+          </template>
+        </q-table>
       </div>
     </q-card-section>
-
     <q-separator />
-
-    <!-- Rodapé com status de sincronização -->
     <q-card-section class="row items-center justify-between bg-grey-1">
       <div class="row items-center">
         <q-icon
-          :name="controle.synced ? 'cloud_done' : 'cloud_off'"
-          :color="controle.synced ? 'positive' : 'orange'"
+          :name="controller.synced ? 'cloud_done' : 'cloud_off'"
+          :color="controller.synced ? 'positive' : 'orange'"
           size="sm"
           class="q-mr-xs"
         />
         <span class="text-caption">
-          {{ controle.synced ? 'Sincronizado' : 'Não sincronizado' }}
+          {{ controller.synced ? 'Synchronized' : 'Not Synchronized' }}
         </span>
       </div>
-      <div class="text-caption text-grey-6">Atualizado: {{ dataAtualizacaoFormatted }}</div>
+      <div class="text-caption text-grey-6">Updated: {{ dataAtualizacaoFormatted }}</div>
     </q-card-section>
   </q-card>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import {ref, computed, watch} from 'vue'
 import { useProjectStore } from 'src/stores/project'
 import { format } from 'date-fns'
+import {date, useQuasar} from "quasar";
 
 const props = defineProps({
-  controle: {
+  controller: {
     type: Object,
     required: true,
   },
 })
 
 const store = useProjectStore()
+const $q = useQuasar();
+const localData = ref({ ...props.controller })
+const rows = computed(() => Object.values(store.vulnerabilities).filter(row => row.controller_id === props.controller.id))
 
-const localData = ref({ ...props.controle })
-
+const columns = [
+  { name: 'id', label: 'ID', field: 'id', align: 'left', sortable: true },
+  { name: 'title', label: 'Title', field: 'title', align: 'left', sortable: true },
+  { name: 'controller', label: 'Controller', field: 'controller_id'},
+  { name: 'severity', label: 'Severity', field: 'severity', align: 'left', sortable: true },
+  { name: 'phase', label: 'Phase', field: 'phase', align: 'left' },
+  { name: 'status', label: 'Status', field: 'status', align: 'left', sortable: true },
+  { name: 'tester', label: 'Tester', field: 'tester', align: 'left' },
+  { name: 'dt_discover', label: 'Discovered', field: 'dt_discover', align: 'left', sortable: true, format: (val) => {
+      return date.formatDate(val, 'DD/MM/YYYY HH:mm:ss');
+    }, },
+  { name: 'actions', label: 'Actions', field: 'actions', align: 'left' }
+]
 const statusOptions = [
-  { label: 'Não Testado', value: 'nao_testado', icon: 'radio_button_unchecked' },
-  { label: 'Em Progresso', value: 'em_progresso', icon: 'pending' },
-  { label: 'Testado', value: 'testado', icon: 'check_circle' },
+  { label: 'Not Tested', value: 'not_tested', icon: 'radio_button_unchecked' },
+  { label: 'In Progress', value: 'in_progress', icon: 'pending' },
+  { label: 'Tested', value: 'tested', icon: 'check_circle' },
   { label: 'N/A', value: 'na', icon: 'block' },
 ]
 
 const resultadoOptions = [
-  { label: 'Passou', value: 'passou', icon: 'check_circle', color: 'positive' },
-  { label: 'Não Passou', value: 'nao_passou', icon: 'cancel', color: 'negative' },
+  { label: 'Passed', value: 'passed', icon: 'check_circle', color: 'positive' },
+  { label: 'Not Passed', value: 'not_pass', icon: 'cancel', color: 'negative' },
   { label: 'N/A', value: null, icon: 'remove', color: 'grey' },
 ]
 
 const resultadoSubtesteOptions = [
-  { label: 'Passou', value: 'passou' },
-  { label: 'Não Passou', value: 'nao_passou' },
-  { label: 'Não Testado', value: null },
+  { label: 'Passed', value: 'passed' },
+  { label: 'Not Passed', value: 'not_pass' },
+  { label: 'Not Tested', value: null },
 ]
 
-const userEmail = computed(() => store.settings.userEmail || 'desconhecido@email.com')
+const userEmail = computed(() => store.currentProject.settings.userEmail || 'desconhecido@email.com')
 
 const dataTesteFormatted = computed(() => {
-  if (!localData.value.data_teste) return 'Não testado'
-  return format(new Date(localData.value.data_teste), 'dd/MM/yyyy HH:mm')
+  if (!localData.value.dt_test) return 'Not Tested'
+  return format(new Date(localData.value.dt_test), 'dd/MM/yyyy HH:mm')
 })
 
 const dataAtualizacaoFormatted = computed(() => {
-  if (!localData.value.data_atualizacao) return 'Nunca'
-  return format(new Date(localData.value.data_atualizacao), 'dd/MM/yyyy HH:mm')
+  if (!localData.value.dt_updated) return 'Never'
+  return format(new Date(localData.value.dt_updated), 'dd/MM/yyyy HH:mm')
 })
 
 function getStatusIcon(status) {
@@ -209,15 +238,13 @@ function getResultadoIcon(resultado) {
 }
 
 function handleStatusChange(newStatus) {
-  if (newStatus === 'testado' && !localData.value.data_teste) {
-    localData.value.data_teste = new Date().toISOString()
-    localData.value.testador = userEmail.value
+  if (newStatus === 'tested' && !localData.value.dt_test) {
+    localData.value.dt_test = new Date().toISOString()
+    localData.value.tester = userEmail.value
   }
-
   if (newStatus === 'na') {
-    localData.value.resultado = null
+    localData.value.result = null
   }
-
   saveData()
 }
 
@@ -227,15 +254,39 @@ function handleResultadoChange() {
 
 async function saveData() {
   try {
-    await store.saveControle(props.controle.id, localData.value)
+    await store.saveController(props.controller.id, localData.value)
     console.log('✅ Controle salvo automaticamente')
   } catch (error) {
     console.error('Erro ao salvar controle:', error)
   }
 }
+async function deleteVulnerability(vulnerabilityId) {
+  $q.dialog({
+    title: 'Are you sure?',
+    message: 'Do you really want to delete?',
+    cancel: true,
+    persistent: true,
+  })
+    .onOk(() => {
+      try {
+        store.deleteVulnerability(vulnerabilityId);
+        $q.notify({
+          message: `Vulnerability deleted successfully!`,
+          icon: 'check_circle',
+          iconColor: 'green'
+        })
+      } catch (exception) {
+        $q.notify({
+          message: `Error on delete vulnerability: ${exception.message}`,
+          icon: 'error',
+          iconColor: 'red'
+        })
+      }
+    })
+}
 
 watch(
-  () => props.controle,
+  () => props.controller,
   (newVal) => {
     localData.value = { ...newVal }
   },
