@@ -19,7 +19,7 @@
         <q-toolbar>
           <q-space />
 
-          <q-btn flat round dense size="md" icon="report" @click="showReportDialog = true">
+          <q-btn flat round dense size="md" icon="analytics" @click="showReportDialog = true">
             <q-tooltip>Generate Report</q-tooltip>
           </q-btn>
 
@@ -85,7 +85,7 @@
 </template>
 
 <script setup>
-import {ref, computed, onMounted} from 'vue'
+import {ref, computed, onMounted, onUnmounted, watch} from 'vue'
 import { useProjectStore } from 'stores/project'
 import { useQuasar } from 'quasar'
 import Dashboard from 'pages/DashboardInitialPage.vue'
@@ -107,9 +107,7 @@ const showMasterPasswordDialog = ref(false)
 const loading = ref(false)
 const showNewProjectDialog = ref(false);
 const showReportDialog = ref(false);
-
 const currentProjectId = ref(null)
-
 
 const projectOptions = computed(() => {
   return store.projects.map((p) => ({
@@ -143,7 +141,6 @@ const syncTooltip = computed(() => {
 
 const lastSyncText = computed(() => {
   if (!store.syncStatus.lastSync) return 'Never syncronized'
-
   try {
     return formatDistanceToNow(store.syncStatus.lastSync, {
       addSuffix: true,
@@ -154,6 +151,12 @@ const lastSyncText = computed(() => {
   }
 })
 
+function onUserActivity() {
+  if (authStore.isUnlocked) authStore.resetSessionTimer()
+}
+function setLoading(newLoadingValue){
+  loading.value = newLoadingValue;
+}
 function setNewProject(project) {
   showNewProjectDialog.value = !showNewProjectDialog.value;
   currentProjectId.value = project.id
@@ -179,14 +182,8 @@ async function changeProject(projectId) {
     loading.value = false
   }
 }
-function setLoading(newLoadingValue){
-  loading.value = newLoadingValue;
-}
-
-
 async function exportBackup() {
   try {
-    // Por enquanto, apenas notificar
     $q.notify({
       type: 'info',
       message: 'Função de backup em desenvolvimento',
@@ -200,18 +197,24 @@ async function onUnlocked() {
   showUnlockDialog.value = false
   await store.init()
 }
+watch(() => authStore.isUnlocked, (val) => {
+  if (!val) showUnlockDialog.value = true
+})
+onUnmounted(() => {
+  window.removeEventListener('mousemove', onUserActivity)
+  window.removeEventListener('keydown', onUserActivity)
+  window.removeEventListener('click', onUserActivity)
+})
 onMounted(async () => {
   loading.value = true
   try {
     await authStore.init()
-
     if (!authStore.isConfigured) {
       showMasterPasswordDialog.value = true
     } else {
       showUnlockDialog.value = true
       return
     }
-
     await store.init()
   } catch (error) {
     console.error('Erro na inicialização:', error)
@@ -222,6 +225,9 @@ onMounted(async () => {
     })
   } finally {
     loading.value = false
+    window.addEventListener('mousemove', onUserActivity)
+    window.addEventListener('keydown', onUserActivity)
+    window.addEventListener('click', onUserActivity)
   }
 })
 </script>

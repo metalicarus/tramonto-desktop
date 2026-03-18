@@ -8,7 +8,9 @@ export const useAuthStore = defineStore('auth', {
     masterPassword: null,
     isConfigured: false,
     failedAttempts: 0,
-    lockedUntil: null
+    lockedUntil: null,
+    _sessionTimer: null,
+    sessionTimeout: 15 * 60 * 1000, // 15 minutos
   }),
 
   actions: {
@@ -44,9 +46,7 @@ export const useAuthStore = defineStore('auth', {
           const level = this.failedAttempts / 3
           const delays = [30, 300, 3600] // 30s, 5min, 1h
           const delay = delays[Math.min(level - 1, delays.length - 1)] * 1000
-          console.log('failedAttempts:', this.failedAttempts, 'level:', level, 'delay (ms):', delay, 'delay (s):', delay/1000)
           this.lockedUntil = new Date(Date.now() + delay).toISOString()
-
           await saveSetting('failed_attempts', this.failedAttempts)
           await saveSetting('locked_until', this.lockedUntil)
         }
@@ -58,15 +58,13 @@ export const useAuthStore = defineStore('auth', {
       this.isUnlocked = true
       await saveSetting('failed_attempts', 0)
       await saveSetting('locked_until', null)
+      this.resetSessionTimer()
     },
 
     async unlockWithRecoveryKey(recoveryKey, newPassword) {
       const recoveryHash = await loadSetting('recovery_key_hash')
       const valid = await verifyPassword(recoveryKey, recoveryHash)
-
       if (!valid) throw new Error('Invalid recovery key')
-
-      // Redefine a senha
       await this.setupMasterPassword(newPassword)
     },
 
@@ -75,6 +73,20 @@ export const useAuthStore = defineStore('auth', {
       this.isUnlocked = false
     },
 
+    resetSessionTimer() {
+      clearTimeout(this._sessionTimer)
+      this._sessionTimer = setTimeout(() => {
+        this.lock()
+      }, this.sessionTimeout)
+    },
+
+    startSessionTimer() {
+      this.resetSessionTimer()
+    },
+
+    stopSessionTimer() {
+      clearTimeout(this._sessionTimer)
+    },
 
   },
 })
