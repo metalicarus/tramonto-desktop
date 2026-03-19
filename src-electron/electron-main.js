@@ -41,10 +41,35 @@ ipcMain.handle('git:fullSync', async (_, projectDir, token, repoUrl, message) =>
 
 ipcMain.handle('git:clone', async (_, repoUrl, token, destDir) => {
   const authUrl = repoUrl.replace('https://', `https://${token}@`)
-  const git = simpleGit()
+  try {
+    const stat = await fs.stat(destDir)
+    if (stat.isDirectory()) {
+      const git = simpleGit(destDir)
+      const isRepo = await git.checkIsRepo()
+      if (isRepo) {
+        await git.pull(authUrl, 'main')
+        return { success: true }
+      }
+    }
+  } catch {
+    // NO ALTERNATIVE
+  }
   await fs.mkdir(destDir, { recursive: true })
+  const git = simpleGit()
   await git.clone(authUrl, destDir)
   return { success: true }
+})
+ipcMain.handle('fs:readEvidence', async (_, filePath) => {
+  const buffer = await fs.readFile(filePath)
+  return buffer.toString('base64')
+})
+ipcMain.handle('fs:saveEvidence', async (_, projectId, filename, base64Data) => {
+  const evidenceDir = pathToFiles.join(os.homedir(), '.tramonto', 'evidence', projectId)
+  await fs.mkdir(evidenceDir, { recursive: true })
+  const buffer = Buffer.from(base64Data, 'base64')
+  const filePath = pathToFiles.join(evidenceDir, filename)
+  await fs.writeFile(filePath, buffer)
+  return filePath
 })
 
 ipcMain.handle('fs:readDir', async (_, dirPath) => {

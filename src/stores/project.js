@@ -262,11 +262,14 @@ export const useProjectStore = defineStore('project', {
 
       await cloneRepo(repoUrl, token, destDir)
       const files = await readDir(destDir)
+
       let project = null
       const controllers = []
       const vulns = []
 
+      // 1. Processa JSONs
       for (const file of files) {
+        if (!file.path.endsWith('.json')) continue
         const decrypted = await decrypt(file.content, authStore.masterPassword)
         if (file.path.endsWith('project.json')) {
           project = decrypted
@@ -276,13 +279,34 @@ export const useProjectStore = defineStore('project', {
           vulns.push(decrypted)
         }
       }
+
       if (!project) throw new Error('Invalid repository — project.json not found')
+
       project.settings = {
         ...project.settings,
         githubToken: token,
         githubProject: repoUrl,
-        repoDir: repoName
+        repoDir: repoName,
       }
+
+      // 2. Processa evidências
+      for (const file of files) {
+        if (!file.path.includes('/evidence/')) continue
+
+        const decrypted = await decrypt(file.content, authStore.masterPassword)
+        const vulnId = file.path.split('/evidence/')[1].split('/')[0]
+
+        await window.electronAPI.saveEvidence(project.id, decrypted.name, decrypted.data)
+
+        const evidenceDir = await window.electronAPI.getEvidenceDir(project.id)
+        const vuln = vulns.find(v => v.id === vulnId)
+        if (vuln) {
+          const ev = vuln.evidence?.find(e => e.name === decrypted.name)
+          if (ev) ev.path = `${evidenceDir}/${decrypted.name}`
+        }
+      }
+
+      // 3. Persiste no IndexedDB
       await saveItem('projects', project)
       for (const controller of controllers) {
         await saveItem('controllers', { ...controller, synced: true })
@@ -290,6 +314,7 @@ export const useProjectStore = defineStore('project', {
       for (const vuln of vulns) {
         await saveItem('vulnerabilities', { ...vuln, synced: true })
       }
+
       await this.loadProjects()
       return project
     },
@@ -375,7 +400,17 @@ export const useProjectStore = defineStore('project', {
             await encrypt(toRaw(vuln), password)
           )
         }
-
+        for (const vuln of Object.values(this.vulnerabilities)) {
+          for (const ev of (vuln.evidence || [])) {
+            if (!ev.path) continue
+            const base64 = await window.electronAPI.readEvidence(ev.path)
+            const encrypted = await encrypt({ name: ev.name, type: ev.type, data: base64 }, password)
+            await writeEncryptedJSONFile(
+              `${projectDir}/evidence/${vuln.id}/${ev.name}.enc`,
+              encrypted
+            )
+          }
+        }
         const result = await fullSync(
           projectDir,
           this.currentProject.settings.githubToken,
