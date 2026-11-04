@@ -26,13 +26,16 @@ Data is encrypted before leaving your machine. Collaboration happens through Git
 - **Vulnerability tracking** — severity levels, CVSS scoring, CWE/OWASP mapping, impact and recommendation fields
 - **Three-layer persistence** — IndexedDB (runtime), encrypted JSON files (local), GitHub (remote/collaborative)
 - **End-to-end encryption** — AES-GCM 256-bit encryption via master password before any data leaves your machine
+- **Encrypted evidence** — screenshots and logs attached to vulnerabilities, encrypted at rest with a local vault key
+- **Encrypted backup** — export/import every project and its evidence as a single `.tbak` file
 - **Master password system** — PBKDF2 key derivation, recovery key, lockout policy with exponential backoff
 - **Session timeout** — auto-lock after 15 minutes of inactivity
-- **GitHub sync** — push encrypted project data to private repositories; teammates clone and decrypt locally
+- **GitHub sync** — push encrypted project data to private repositories; teammates clone and decrypt locally (desktop app)
+- **Sync status per item** — every controller and vulnerability shows whether it is synchronized; failed syncs can be retried
 - **Project import** — clone and decrypt an existing repository to restore or collaborate on a project
 - **Report generation** — executive and technical PDF reports via browser print
 - **Anonymous customer codes** — auto-generated codenames (e.g. `naruto_yellow_teacher_sunday`) to avoid exposing real client names in documents
-- **Cross-platform** — runs as Electron (Linux, Windows, macOS) or web app (Chromium-based browsers)
+- **Cross-platform** — runs as Electron (Linux, Windows, macOS) or web app (Chromium-based browsers; GitHub sync is desktop-only for now)
 
 ---
 
@@ -52,7 +55,7 @@ IndexedDB stores plain data for fast access. Before pushing to GitHub, all proje
 Tramonto uses an adapter pattern to handle environment differences:
 
 ```
-src/utils/filesystem/
+src/utils/fileSystem/
 ├── index.js              ← public interface
 ├── detect.js             ← environment detection
 └── adapters/
@@ -69,6 +72,8 @@ src/utils/git/
 ### Security model
 
 - Master password never persisted — stays in memory only
+- GitHub token never written to `.git/config` — sent per command as an HTTP header, and never pushed to the repository
+- Local evidence encrypted with a random vault key, wrapped by both the master password and the recovery key
 - Key derivation: PBKDF2 (SHA-256, 310,000 iterations)
 - Encryption: AES-GCM 256-bit with random salt and IV per file
 - Password verification uses a separate derived key hash stored in IndexedDB
@@ -101,7 +106,7 @@ src/utils/git/
 ### Install
 
 ```bash
-git clone https://github.com/your-username/tramonto.git
+git clone https://github.com/metalicarus/tramonto-desktop.git
 cd tramonto
 npm install
 ```
@@ -148,7 +153,6 @@ GitHub token and repository URL are configured per project in the project settin
 - [x] Adapter pattern for filesystem and git
 - [x] Electron IPC bridge (fs + git handlers)
 - [x] GitHub sync via simple-git (Electron)
-- [x] GitHub sync via Octokit REST API (web)
 - [x] AES-GCM encryption before push
 - [x] Master password setup and verification
 - [x] Recovery key generation
@@ -159,16 +163,21 @@ GitHub token and repository URL are configured per project in the project settin
 - [x] Executive and technical PDF report generation
 - [x] Frameless Electron window with custom titlebar
 - [x] Vulnerability tracking with severity, CVSS, CWE, OWASP
+- [x] Evidence attachments (screenshots, logs) per vulnerability, encrypted at rest
+- [x] Full database export/import backup (encrypted)
+- [x] Sync failure notification with retry
+- [x] Per-item unsynced indicator in the UI
 
 ### Pending
 
-- [ ] Evidence attachments (screenshots, logs) per vulnerability
-- [ ] Full database export/import backup
+- [ ] Per-project keys shared per member (instead of one shared master password)
+- [ ] Encrypt IndexedDB records at rest
+- [ ] Automated tests (unit + Electron end-to-end) in CI
+- [ ] GitHub sync in web mode
+- [ ] Merge conflict resolution for collaborative sessions
+- [ ] Deletions propagated to the repository on sync
 - [ ] Global search across controllers and vulnerabilities
 - [ ] Audit log (who changed what and when)
-- [ ] Sync failure notification with retry
-- [ ] Per-item unsynced indicator in the UI
-- [ ] Merge conflict resolution for collaborative sessions
 
 ---
 
@@ -180,6 +189,7 @@ Tramonto is designed for handling sensitive pentest data. A few important notes:
 - The master password is the single point of trust — choose a strong one
 - Recovery keys should be stored offline (paper, password manager)
 - The web version stores the filesystem handle in memory only — it is lost on page reload
+- Backups are encrypted with the master password: restoring requires the same password used to create them
 - Tramonto does not send telemetry or communicate with any server other than GitHub's API
 
 ---
