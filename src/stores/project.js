@@ -115,6 +115,17 @@ import {
 import { ProjectMetadata, ControllersTemplate } from 'src/schemas/project'
 import {toRaw} from "vue";
 import {useAuthStore} from "stores/auth.js";
+import { saveEvidence, loadEvidence } from 'src/utils/evidence.js'
+
+/**
+ * Cópia do projeto enviada ao repositório: sem o token de quem sincronizou,
+ * que qualquer pessoa com a senha master conseguiria ler.
+ */
+function projectForRepository(project, metrics) {
+  // eslint-disable-next-line no-unused-vars
+  const { githubToken, ...settings } = project.settings || {}
+  return { ...toRaw(project), settings, metrics }
+}
 
 export const useProjectStore = defineStore('project', {
   /** @returns {ProjectState} */
@@ -229,7 +240,7 @@ export const useProjectStore = defineStore('project', {
         id: projectId,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        created_by: this.currentProject.settings.userEmail,
+        created_by: this.currentProject?.settings?.userEmail ?? null,
       }
 
       await saveItem('projects', project)
@@ -262,11 +273,14 @@ export const useProjectStore = defineStore('project', {
 
       await cloneRepo(repoUrl, token, destDir)
       const files = await readDir(destDir)
+
       let project = null
       const controllers = []
       const vulns = []
 
+      // 1. Processa JSONs
       for (const file of files) {
+        if (!file.path.endsWith('.json')) continue
         const decrypted = await decrypt(file.content, authStore.masterPassword)
         if (file.path.endsWith('project.json')) {
           project = decrypted
@@ -276,13 +290,25 @@ export const useProjectStore = defineStore('project', {
           vulns.push(decrypted)
         }
       }
+
       if (!project) throw new Error('Invalid repository — project.json not found')
+
       project.settings = {
         ...project.settings,
         githubToken: token,
         githubProject: repoUrl,
-        repoDir: repoName
+        repoDir: repoName,
       }
+
+      // 2. Processa evidências
+      for (const file of files) {
+        if (!file.path.includes('/evidence/')) continue
+
+        const decrypted = await decrypt(file.content, authStore.masterPassword)
+        await saveEvidence(project.id, decrypted, authStore.vaultKey)
+      }
+
+      // 3. Persiste no IndexedDB
       await saveItem('projects', project)
       for (const controller of controllers) {
         await saveItem('controllers', { ...controller, synced: true })
@@ -290,6 +316,7 @@ export const useProjectStore = defineStore('project', {
       for (const vuln of vulns) {
         await saveItem('vulnerabilities', { ...vuln, synced: true })
       }
+
       await this.loadProjects()
       return project
     },
@@ -356,7 +383,7 @@ export const useProjectStore = defineStore('project', {
         const projectDir = `${baseDir}/${repoDir}`
         await writeEncryptedJSONFile(
           `${projectDir}/project.json`,
-          await encrypt({ ...this.currentProject, metrics: this.projectMetrics }, password)
+          await encrypt(projectForRepository(this.currentProject, this.projectMetrics), password)
         )
 
         for (const [phaseId, controllers] of Object.entries(this.controllersByPhase)) {
@@ -375,7 +402,22 @@ export const useProjectStore = defineStore('project', {
             await encrypt(toRaw(vuln), password)
           )
         }
-
+        for (const vuln of Object.values(this.vulnerabilities)) {
+          for (const ev of (vuln.evidence || [])) {
+            let evidence
+            try {
+              evidence = await loadEvidence(this.currentProject.id, ev, authStore.vaultKey)
+            } catch (error) {
+              console.warn(`Evidence ${ev.name} not found locally, skipping:`, error.message)
+              continue
+            }
+            const encrypted = await encrypt(evidence, password)
+            await writeEncryptedJSONFile(
+              `${projectDir}/evidence/${vuln.id}/${ev.name}.enc`,
+              encrypted
+            )
+          }
+        }
         const result = await fullSync(
           projectDir,
           this.currentProject.settings.githubToken,
@@ -383,12 +425,12 @@ export const useProjectStore = defineStore('project', {
           `Sync: ${this.currentProject.settings.userEmail} - ${new Date().toISOString()}`,
         )
 
-        if (result.success) {
-          await this.markAllAsSynced()
-          this.syncStatus.lastSync = new Date()
-          this.syncStatus.unsyncedChanges = 0
-          return { success: true, message: 'Synchronized with success' }
-        }
+        if (!result.success) throw new Error(result.message || 'Synchronization failed')
+
+        await this.markAllAsSynced()
+        this.syncStatus.lastSync = new Date()
+        this.syncStatus.unsyncedChanges = 0
+        return { success: true, message: 'Synchronized with success' }
 
       } catch (error) {
         this.syncStatus.error = error.message
@@ -453,8 +495,8 @@ export const useProjectStore = defineStore('project', {
     async saveSettings(newSettings) {
       this.currentProject.settings = { ...this.currentProject.settings, ...newSettings }
       this.currentProject.settings_synced = false
-      this.syncStatus.unsyncedChanges = false
       await saveItem('projects', JSON.parse(JSON.stringify(this.currentProject)))
+      await this.updateUnsyncedCount()
       console.log(`💾 Setting updated`)
     },
   },
