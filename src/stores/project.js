@@ -115,6 +115,17 @@ import {
 import { ProjectMetadata, ControllersTemplate } from 'src/schemas/project'
 import {toRaw} from "vue";
 import {useAuthStore} from "stores/auth.js";
+import { saveEvidence, loadEvidence } from 'src/utils/evidence.js'
+
+/**
+ * Cópia do projeto enviada ao repositório: sem o token de quem sincronizou,
+ * que qualquer pessoa com a senha master conseguiria ler.
+ */
+function projectForRepository(project, metrics) {
+  // eslint-disable-next-line no-unused-vars
+  const { githubToken, ...settings } = project.settings || {}
+  return { ...toRaw(project), settings, metrics }
+}
 
 export const useProjectStore = defineStore('project', {
   /** @returns {ProjectState} */
@@ -229,7 +240,7 @@ export const useProjectStore = defineStore('project', {
         id: projectId,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        created_by: this.currentProject.settings.userEmail,
+        created_by: this.currentProject?.settings?.userEmail ?? null,
       }
 
       await saveItem('projects', project)
@@ -294,16 +305,7 @@ export const useProjectStore = defineStore('project', {
         if (!file.path.includes('/evidence/')) continue
 
         const decrypted = await decrypt(file.content, authStore.masterPassword)
-        const vulnId = file.path.split('/evidence/')[1].split('/')[0]
-
-        await window.electronAPI.saveEvidence(project.id, decrypted.name, decrypted.data)
-
-        const evidenceDir = await window.electronAPI.getEvidenceDir(project.id)
-        const vuln = vulns.find(v => v.id === vulnId)
-        if (vuln) {
-          const ev = vuln.evidence?.find(e => e.name === decrypted.name)
-          if (ev) ev.path = `${evidenceDir}/${decrypted.name}`
-        }
+        await saveEvidence(project.id, decrypted, authStore.vaultKey)
       }
 
       // 3. Persiste no IndexedDB
@@ -381,7 +383,7 @@ export const useProjectStore = defineStore('project', {
         const projectDir = `${baseDir}/${repoDir}`
         await writeEncryptedJSONFile(
           `${projectDir}/project.json`,
-          await encrypt({ ...this.currentProject, metrics: this.projectMetrics }, password)
+          await encrypt(projectForRepository(this.currentProject, this.projectMetrics), password)
         )
 
         for (const [phaseId, controllers] of Object.entries(this.controllersByPhase)) {
@@ -402,9 +404,14 @@ export const useProjectStore = defineStore('project', {
         }
         for (const vuln of Object.values(this.vulnerabilities)) {
           for (const ev of (vuln.evidence || [])) {
-            if (!ev.path) continue
-            const base64 = await window.electronAPI.readEvidence(ev.path)
-            const encrypted = await encrypt({ name: ev.name, type: ev.type, data: base64 }, password)
+            let evidence
+            try {
+              evidence = await loadEvidence(this.currentProject.id, ev, authStore.vaultKey)
+            } catch (error) {
+              console.warn(`Evidence ${ev.name} not found locally, skipping:`, error.message)
+              continue
+            }
+            const encrypted = await encrypt(evidence, password)
             await writeEncryptedJSONFile(
               `${projectDir}/evidence/${vuln.id}/${ev.name}.enc`,
               encrypted
@@ -418,12 +425,12 @@ export const useProjectStore = defineStore('project', {
           `Sync: ${this.currentProject.settings.userEmail} - ${new Date().toISOString()}`,
         )
 
-        if (result.success) {
-          await this.markAllAsSynced()
-          this.syncStatus.lastSync = new Date()
-          this.syncStatus.unsyncedChanges = 0
-          return { success: true, message: 'Synchronized with success' }
-        }
+        if (!result.success) throw new Error(result.message || 'Synchronization failed')
+
+        await this.markAllAsSynced()
+        this.syncStatus.lastSync = new Date()
+        this.syncStatus.unsyncedChanges = 0
+        return { success: true, message: 'Synchronized with success' }
 
       } catch (error) {
         this.syncStatus.error = error.message
@@ -488,8 +495,8 @@ export const useProjectStore = defineStore('project', {
     async saveSettings(newSettings) {
       this.currentProject.settings = { ...this.currentProject.settings, ...newSettings }
       this.currentProject.settings_synced = false
-      this.syncStatus.unsyncedChanges = false
       await saveItem('projects', JSON.parse(JSON.stringify(this.currentProject)))
+      await this.updateUnsyncedCount()
       console.log(`💾 Setting updated`)
     },
   },
