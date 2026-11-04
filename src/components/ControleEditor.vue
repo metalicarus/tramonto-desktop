@@ -135,6 +135,14 @@
         >
           <template v-slot:body-cell-actions="props">
             <q-td key="actions" :props="props">
+              <q-btn icon="visibility"
+                     color="primary"
+                     size="sm"
+                     outline
+                     round
+                     class="q-mr-xs"
+                     @click="openVulnerability(props.row)"
+              />
               <q-btn icon="delete"
                      color="red"
                      size="sm"
@@ -163,6 +171,9 @@
       <div class="text-caption text-grey-6">Updated: {{ dataAtualizacaoFormatted }}</div>
     </q-card-section>
   </q-card>
+  <q-dialog v-model="showVulnDialog" full-width>
+    <vulnerability-viewer :vuln="selectedVuln" />
+  </q-dialog>
 </template>
 
 <script setup>
@@ -170,6 +181,7 @@ import {ref, computed, watch} from 'vue'
 import { useProjectStore } from 'src/stores/project'
 import { format } from 'date-fns'
 import {date, useQuasar} from "quasar";
+import VulnerabilityViewer from "components/VulnerabilityViewer.vue";
 
 const props = defineProps({
   controller: {
@@ -182,6 +194,8 @@ const store = useProjectStore()
 const $q = useQuasar();
 const localData = ref({ ...props.controller })
 const rows = computed(() => Object.values(store.vulnerabilities).filter(row => row.controller_id === props.controller.id))
+const showVulnDialog = ref(false)
+const selectedVuln = ref(null)
 
 const columns = [
   { name: 'id', label: 'ID', field: 'id', align: 'left', sortable: true },
@@ -226,6 +240,11 @@ const dataAtualizacaoFormatted = computed(() => {
   if (!localData.value.dt_updated) return 'Never'
   return format(new Date(localData.value.dt_updated), 'dd/MM/yyyy HH:mm')
 })
+
+function openVulnerability(vuln) {
+  selectedVuln.value = vuln
+  showVulnDialog.value = true
+}
 
 function getStatusIcon(status) {
   const option = statusOptions.find((o) => o.value === status)
