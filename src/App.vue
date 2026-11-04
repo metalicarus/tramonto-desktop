@@ -4,7 +4,8 @@
 
     <q-layout view="hHh lpR fFf">
 
-      <q-page-container>
+      <!-- Nada do projeto fica na tela enquanto o app está bloqueado -->
+      <q-page-container v-if="authStore.isUnlocked">
         <dashboard v-if="store.currentProject" />
         <div v-else class="flex flex-center" style="height: 80vh">
           <div class="text-center">
@@ -15,7 +16,7 @@
         </div>
       </q-page-container>
 
-      <q-footer style="height: 45px">
+      <q-footer v-if="authStore.isUnlocked" style="height: 45px">
         <q-toolbar>
           <q-space />
 
@@ -44,6 +45,8 @@
                     style="width: 300px"
                     dark
                     color="white"
+                    emit-value
+                    map-options
                     @update:model-value="changeProject"
           >
             <template v-slot:prepend>
@@ -124,6 +127,7 @@ const projectOptions = computed(() => {
 })
 
 const syncIcon = computed(() => {
+  if (!store.currentProject) return 'cloud_queue'
   if (store.syncStatus.syncing) return 'sync'
   if (store.syncStatus.error) return 'sync_problem'
   if (store.hasUnsyncedChanges) return 'cloud_off'
@@ -131,6 +135,7 @@ const syncIcon = computed(() => {
 })
 
 const syncIconColor = computed(() => {
+  if (!store.currentProject) return 'grey'
   if (store.syncStatus.syncing) return 'blue'
   if (store.syncStatus.error) return 'negative'
   if (store.hasUnsyncedChanges) return 'orange'
@@ -138,16 +143,18 @@ const syncIconColor = computed(() => {
 })
 
 const syncTooltip = computed(() => {
-  if (store.syncStatus.syncing) return 'Syncronization...'
+  if (!store.currentProject) return 'No project selected'
+  if (store.syncStatus.syncing) return 'Synchronizing...'
   if (store.syncStatus.error) return `Error: ${store.syncStatus.error}`
   if (store.hasUnsyncedChanges) {
-    return `${store.syncStatus.unsyncedChanges} not syncronized changes`
+    return `${store.syncStatus.unsyncedChanges} unsynchronized changes`
   }
-  return 'All syncronized'
+  return 'All synchronized'
 })
 
 const lastSyncText = computed(() => {
-  if (!store.syncStatus.lastSync) return 'Never syncronized'
+  if (!store.currentProject) return ''
+  if (!store.syncStatus.lastSync) return 'Never synchronized'
   try {
     return formatDistanceToNow(store.syncStatus.lastSync, {
       addSuffix: true,
@@ -167,13 +174,13 @@ function setLoading(newLoadingValue){
 function setNewProject(project) {
   showNewProjectDialog.value = !showNewProjectDialog.value;
   currentProjectId.value = project.id
-  changeProject(currentProjectId);
+  changeProject(project.id);
 }
 async function changeProject(projectId) {
   if (!projectId) return
   loading.value = true
   try {
-    await store.loadProject(projectId.value)
+    await store.loadProject(projectId)
     $q.notify({
       message: `Project "${store.currentProject.name}" loaded`,
       icon: 'check_circle',

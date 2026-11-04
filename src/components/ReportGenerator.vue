@@ -26,6 +26,19 @@ import { ref } from 'vue'
 import { useProjectStore } from 'stores/project.js'
 
 const store = useProjectStore()
+
+/**
+ * Todo texto vindo do usuário passa por aqui: descrições de pentest costumam
+ * conter payloads (<img onerror=...>) que não podem virar HTML no relatório.
+ */
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
 const includeExecutive = ref(true)
 const includeTechnical = ref(false)
 
@@ -39,7 +52,7 @@ function severityBadge(severity) {
   }
   const labels = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Info' }
   const style = styles[severity] || 'background:#f5f5f5;color:#666'
-  return `<span style="display:inline-block;font-size:11px;font-weight:500;padding:2px 8px;border-radius:4px;${style}">${labels[severity] || severity}</span>`
+  return `<span style="display:inline-block;font-size:11px;font-weight:500;padding:2px 8px;border-radius:4px;${style}">${labels[severity] || escapeHtml(severity)}</span>`
 }
 
 function buildCvssBar() {
@@ -72,17 +85,17 @@ function buildExecutive() {
   const p = store.currentProject
   const rows = sortedVulns().map(v => `
     <tr>
-      <td>${v.id}</td>
-      <td>${v.title || '—'}</td>
+      <td>${escapeHtml(v.id)}</td>
+      <td>${escapeHtml(v.title || '—')}</td>
       <td>${severityBadge(v.severity)}</td>
-      <td>${v.cvss || '—'}</td>
-      <td>${v.owasp || '—'}</td>
+      <td>${escapeHtml(v.cvss || '—')}</td>
+      <td>${escapeHtml(v.owasp || '—')}</td>
     </tr>
   `).join('')
 
   return `
-    <h1>Security Assessment — ${p.customer}</h1>
-    <p class="meta">Project: ${p.name} · Period: ${p.start_date} – ${p.end_date} · Environment: ${p.environment}</p>
+    <h1>Security Assessment — ${escapeHtml(p.customer)}</h1>
+    <p class="meta">Project: ${escapeHtml(p.name)} · Period: ${escapeHtml(p.start_date)} – ${escapeHtml(p.end_date)} · Environment: ${escapeHtml(p.environment)}</p>
     <span class="confidential">CONFIDENTIAL</span>
     <div class="metrics-grid">
       <div class="metric-card"><div class="metric-label">Controllers tested</div><div class="metric-value">${m.tested}/${m.total_controllers}</div></div>
@@ -117,8 +130,8 @@ function buildTechnical() {
       const statusLabel = c.result === 'passed' ? 'Passed' : c.status === 'na' ? 'N/A' : c.status === 'not_test' ? 'Not tested' : 'Failed'
       return `
         <div class="ctrl-row">
-          <span class="ctrl-id">${c.id.split('_')[1] || c.id}</span>
-          <span class="ctrl-obj">${c.objective}</span>
+          <span class="ctrl-id">${escapeHtml(c.id.split('_')[1] || c.id)}</span>
+          <span class="ctrl-obj">${escapeHtml(c.objective)}</span>
           <span class="ctrl-status ${statusClass}">${statusLabel}</span>
         </div>
       `
@@ -137,21 +150,21 @@ function buildTechnical() {
 
   const vulnsHtml = sortedVulns().map(v => `
     <div class="vuln-detail">
-      <div class="vuln-title-row">${severityBadge(v.severity)}<span class="vuln-name">${v.title || '—'}</span></div>
+      <div class="vuln-title-row">${severityBadge(v.severity)}<span class="vuln-name">${escapeHtml(v.title || '—')}</span></div>
       <div class="vuln-meta">
-        <div>CVSS <span>${v.cvss || '—'}</span></div>
-        <div>CWE <span>${v.cwe || '—'}</span></div>
-        <div>OWASP <span>${v.owasp || '—'}</span></div>
+        <div>CVSS <span>${escapeHtml(v.cvss || '—')}</span></div>
+        <div>CWE <span>${escapeHtml(v.cwe || '—')}</span></div>
+        <div>OWASP <span>${escapeHtml(v.owasp || '—')}</span></div>
       </div>
-      ${v.description ? `<div class="vuln-section-label">Description</div><div class="vuln-section-text">${v.description}</div>` : ''}
-      ${v.impact ? `<div class="vuln-section-label">Impact</div><div class="vuln-section-text">${v.impact}</div>` : ''}
-      ${v.recommendation ? `<div class="vuln-section-label">Recommendation</div><div class="recommendation-box">${v.recommendation}</div>` : ''}
+      ${v.description ? `<div class="vuln-section-label">Description</div><div class="vuln-section-text">${escapeHtml(v.description)}</div>` : ''}
+      ${v.impact ? `<div class="vuln-section-label">Impact</div><div class="vuln-section-text">${escapeHtml(v.impact)}</div>` : ''}
+      ${v.recommendation ? `<div class="vuln-section-label">Recommendation</div><div class="recommendation-box">${escapeHtml(v.recommendation)}</div>` : ''}
     </div>
   `).join('')
 
   return `
-    <h1>Technical Report — ${p.name}</h1>
-    <p class="meta">Tester: ${p.settings?.userEmail || '—'} · Generated: ${new Date().toLocaleDateString()}</p>
+    <h1>Technical Report — ${escapeHtml(p.name)}</h1>
+    <p class="meta">Tester: ${escapeHtml(p.settings?.userEmail || '—')} · Generated: ${new Date().toLocaleDateString()}</p>
     <span class="confidential">CONFIDENTIAL</span>
     <h2>Test coverage by phase</h2>
     ${phasesHtml}
@@ -217,12 +230,11 @@ const css = `
 `
 
 function generate() {
-  const win = window.open('', '_blank')
-
-  win.document.documentElement.innerHTML = `
+  const html = `<!doctype html>
+    <html>
     <head>
       <meta charset="utf-8">
-      <title>Report — ${store.currentProject.name}</title>
+      <title>Report — ${escapeHtml(store.currentProject.name)}</title>
       <style>${css}</style>
     </head>
     <body>
@@ -230,10 +242,18 @@ function generate() {
       ${includeExecutive.value && includeTechnical.value ? '<div class="page-break"></div>' : ''}
       ${includeTechnical.value ? buildTechnical() : ''}
     </body>
-  `
+    </html>`
 
-  const script = win.document.createElement('script')
-  script.textContent = 'window.print(); window.onafterprint = () => window.close();'
-  win.document.body.appendChild(script)
+  // iframe isolado e sem scripts: funciona no Electron (que bloqueia janelas novas)
+  // e impede que algum conteúdo do relatório execute código
+  const frame = document.createElement('iframe')
+  frame.setAttribute('sandbox', 'allow-same-origin allow-modals')
+  frame.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden'
+  frame.onload = () => {
+    frame.contentWindow.onafterprint = () => frame.remove()
+    frame.contentWindow.print()
+  }
+  frame.srcdoc = html
+  document.body.appendChild(frame)
 }
 </script>

@@ -7,7 +7,8 @@
     <q-card-section>
       <q-input v-model="settingsForm.userName" label="Name" outlined class="q-mb-md" />
 
-      <q-input v-model="settingsForm.userEmail" label="E-mail" type="email" outlined class="q-mb-md" />
+      <q-input v-model="settingsForm.userEmail" label="E-mail" type="email" outlined class="q-mb-md"
+               :rules="[(val) => isValidEmail(val) || 'Invalid e-mail']" />
 
       <q-input v-model="settingsForm.githubProject" label="Github Project" outlined class="q-mb-md" />
 
@@ -17,7 +18,7 @@
 
     <q-card-actions align="right">
       <q-btn flat label="Cancel" v-close-popup />
-      <q-btn color="primary" label="Save" @click="saveSettings" v-close-popup />
+      <q-btn color="primary" label="Save" :disable="!isValidEmail(settingsForm.userEmail)" @click="saveSettings" v-close-popup />
     </q-card-actions>
   </q-card>
 </template>
@@ -35,6 +36,10 @@ const settingsForm = ref({
   githubToken: '',
 })
 const emit = defineEmits(['saved-project-settings'])
+
+function isValidEmail(val) {
+  return !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)
+}
 
 function saveSettings() {
   store.saveSettings(settingsForm.value)
