@@ -27,6 +27,11 @@
             <q-tooltip>Export Backup</q-tooltip>
           </q-btn>
 
+          <q-btn flat round dense size="md" icon="upload" @click="importBackup">
+            <q-tooltip>Import Backup</q-tooltip>
+          </q-btn>
+          <input ref="backupInput" type="file" accept=".tbak" style="display: none" @change="onBackupFileSelected" />
+
           <q-btn flat round dense icon="add" size="md" @click="showNewProjectDialog = true">
             <q-tooltip>New Project</q-tooltip>
           </q-btn>
@@ -97,6 +102,7 @@ import {useAuthStore} from "stores/auth.js";
 import MasterPasswordSetup from "components/MasterPasswordSetup.vue";
 import UnlockDialog from "components/UnlockDialog.vue";
 import ReportGenerator from "components/ReportGenerator.vue";
+import { createBackup, restoreBackup, backupFileName } from 'src/utils/backup.js'
 
 const $q = useQuasar()
 const store = useProjectStore()
@@ -108,6 +114,7 @@ const loading = ref(false)
 const showNewProjectDialog = ref(false);
 const showReportDialog = ref(false);
 const currentProjectId = ref(null)
+const backupInput = ref(null)
 
 const projectOptions = computed(() => {
   return store.projects.map((p) => ({
@@ -183,15 +190,70 @@ async function changeProject(projectId) {
   }
 }
 async function exportBackup() {
+  loading.value = true
   try {
-    $q.notify({
-      type: 'info',
-      message: 'Função de backup em desenvolvimento',
-      icon: 'info',
-    })
+    const { content, skipped } = await createBackup(authStore.masterPassword, authStore.vaultKey)
+    const fileName = backupFileName()
+    if (window.electronAPI?.saveBackup) {
+      const savedPath = await window.electronAPI.saveBackup(fileName, content)
+      if (!savedPath) return
+      $q.notify({ type: 'positive', message: `Backup saved to ${savedPath}`, icon: 'cloud_done' })
+    } else {
+      const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fileName
+      a.click()
+      URL.revokeObjectURL(url)
+    }
+    if (skipped.length) {
+      $q.notify({ type: 'warning', message: `${skipped.length} evidence file(s) not found and left out of the backup` })
+    }
   } catch (error) {
-    console.error(error)
+    $q.notify({ type: 'negative', message: `Backup failed: ${error.message}`, icon: 'error' })
+  } finally {
+    loading.value = false
   }
+}
+
+async function importBackup() {
+  if (!window.electronAPI?.openBackup) {
+    backupInput.value.click()
+    return
+  }
+  const content = await window.electronAPI.openBackup()
+  if (content) confirmRestore(content)
+}
+
+async function onBackupFileSelected(event) {
+  const file = event.target.files[0]
+  event.target.value = ''
+  if (file) confirmRestore(await file.text())
+}
+
+function confirmRestore(content) {
+  $q.dialog({
+    title: 'Import Backup',
+    message: 'Projects, controllers and vulnerabilities with the same ID will be replaced by the backup version. Continue?',
+    cancel: true,
+    persistent: true,
+  }).onOk(async () => {
+    loading.value = true
+    try {
+      const result = await restoreBackup(content, authStore.masterPassword, authStore.vaultKey)
+      await store.loadProjects()
+      if (store.currentProject) await store.loadProject(store.currentProject.id)
+      $q.notify({
+        type: 'positive',
+        message: `Backup restored: ${result.projects} project(s), ${result.vulnerabilities} vulnerability(ies), ${result.evidence} evidence file(s)`,
+        icon: 'cloud_done',
+      })
+    } catch (error) {
+      $q.notify({ type: 'negative', message: error.message, icon: 'error' })
+    } finally {
+      loading.value = false
+    }
+  })
 }
 async function onUnlocked() {
   showUnlockDialog.value = false

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -134,7 +134,7 @@ ipcMain.handle('fs:readEvidence', async (_, projectId, filename) => {
   return { encrypted: false, content: buffer.toString('base64') }
 })
 
-ipcMain.handle('fs:removeLegacyEvidence', async (_, projectId, filename) => {
+ipcMain.handle('fs:removeEvidence', async (_, projectId, filename) => {
   await fs.rm(evidencePath(projectId, filename), { force: true })
 })
 
@@ -201,6 +201,26 @@ async function pullAndPush(git, repoUrl, message) {
   }
   await git.push('origin', 'main')
 }
+
+// Backup: o caminho vem do diálogo nativo, escolhido pelo usuário
+ipcMain.handle('backup:save', async (_, defaultName, content) => {
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    defaultPath: path.join(os.homedir(), defaultName),
+    filters: [{ name: 'Tramonto backup', extensions: ['tbak'] }],
+  })
+  if (canceled || !filePath) return null
+  await fs.writeFile(filePath, content, 'utf-8')
+  return filePath
+})
+
+ipcMain.handle('backup:open', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters: [{ name: 'Tramonto backup', extensions: ['tbak'] }],
+  })
+  if (canceled || !filePaths.length) return null
+  return fs.readFile(filePaths[0], 'utf-8')
+})
 
 function isAppUrl(url) {
   if (process.env.DEV) return url.startsWith(process.env.APP_URL)

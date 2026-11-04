@@ -115,7 +115,7 @@ import {
 import { ProjectMetadata, ControllersTemplate } from 'src/schemas/project'
 import {toRaw} from "vue";
 import {useAuthStore} from "stores/auth.js";
-import { saveEvidence, loadEvidence } from 'src/utils/evidence.js'
+import { saveEvidence, loadEvidence, removeEvidence, evidenceFileKey } from 'src/utils/evidence.js'
 
 /**
  * Cópia do projeto enviada ao repositório: sem o token de quem sincronizou,
@@ -305,7 +305,8 @@ export const useProjectStore = defineStore('project', {
         if (!file.path.includes('/evidence/')) continue
 
         const decrypted = await decrypt(file.content, authStore.masterPassword)
-        await saveEvidence(project.id, decrypted, authStore.vaultKey)
+        const fileKey = file.path.split(/[\\/]/).pop().replace(/\.enc$/, '')
+        await saveEvidence(project.id, decrypted, authStore.vaultKey, fileKey)
       }
 
       // 3. Persiste no IndexedDB
@@ -335,6 +336,10 @@ export const useProjectStore = defineStore('project', {
     },
 
     async deleteVulnerability(vulnId) {
+      const vuln = this.vulnerabilities[vulnId]
+      for (const ev of vuln?.evidence || []) {
+        await removeEvidence(this.currentProject.id, ev).catch(() => {})
+      }
       delete this.vulnerabilities[vulnId]
       await deleteItem('vulnerabilities', vulnId)
       await this.updateUnsyncedCount()
@@ -413,7 +418,7 @@ export const useProjectStore = defineStore('project', {
             }
             const encrypted = await encrypt(evidence, password)
             await writeEncryptedJSONFile(
-              `${projectDir}/evidence/${vuln.id}/${ev.name}.enc`,
+              `${projectDir}/evidence/${vuln.id}/${evidenceFileKey(ev)}.enc`,
               encrypted
             )
           }
@@ -440,14 +445,17 @@ export const useProjectStore = defineStore('project', {
       }
     },
     async markAllAsSynced() {
+      // Atualiza também o estado em memória, senão a tela segue mostrando "não sincronizado"
       for (const controller of Object.values(toRaw(this.controllers))) {
         const raw = { ...toRaw(controller), synced: true }
         await saveItem('controllers', raw)
+        this.controllers[raw.id] = raw
       }
 
       for (const vuln of Object.values(toRaw(this.vulnerabilities))) {
         const raw = { ...toRaw(vuln), synced: true }
         await saveItem('vulnerabilities', raw)
+        this.vulnerabilities[raw.id] = raw
       }
       this.currentProject.settings_synced = true
       await saveItem('projects', JSON.parse(JSON.stringify(this.currentProject)))

@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readDir: (dirPath) => ipcRenderer.invoke('fs:readDir', dirPath),
   saveEvidence: (projectId, filename, encryptedContent) => ipcRenderer.invoke('fs:saveEvidence', projectId, filename, encryptedContent),
   readEvidence: (projectId, filename) => ipcRenderer.invoke('fs:readEvidence', projectId, filename),
-  removeLegacyEvidence: (projectId, filename) => ipcRenderer.invoke('fs:removeLegacyEvidence', projectId, filename),
+  removeEvidence: (projectId, filename) => ipcRenderer.invoke('fs:removeEvidence', projectId, filename),
   readEncryptedFile: (filePath) => ipcRenderer.invoke('fs:readEncryptedFile', filePath),
+  saveBackup: (defaultName, content) => ipcRenderer.invoke('backup:save', defaultName, content),
+  openBackup: () => ipcRenderer.invoke('backup:open'),
 })

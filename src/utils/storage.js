@@ -181,53 +181,32 @@ export async function loadSetting(key, defaultValue = null) {
   return setting ? setting.value : defaultValue
 }
 
+const DATA_STORES = ['projects', 'controllers', 'vulnerabilities']
+
 /**
- * Exporta todo o banco para backup (JSON)
+ * Exporta os dados dos projetos para backup.
+ * As configurações ficam de fora: guardam o hash da senha e as chaves embrulhadas desta máquina.
  */
 export async function exportDatabase() {
   const db = await initDB()
-
-  const backup = {
-    version: DB_VERSION,
-    exported_at: new Date().toISOString(),
-    data: {
-      projects: await db.getAll('projects'),
-      controllers: await db.getAll('controllers'),
-      vulnerabilities: await db.getAll('vulnerabilities'),
-      settings: await db.getAll('settings'),
-    },
+  const data = {}
+  for (const store of DATA_STORES) {
+    data[store] = await db.getAll(store)
   }
-
-  return backup
+  return { version: DB_VERSION, exported_at: new Date().toISOString(), data }
 }
 
 /**
- * Importa backup do banco
+ * Importa backup do banco. Itens com o mesmo id são substituídos.
  */
 export async function importDatabase(backup) {
   const db = await initDB()
-  const tx = db.transaction(['projects', 'controllers', 'vulnerabilities', 'settings'], 'readwrite')
-
-  // Importar projetos
-  for (const project of backup.data.projects) {
-    await tx.objectStore('projects').put(project)
+  const tx = db.transaction(DATA_STORES, 'readwrite')
+  for (const store of DATA_STORES) {
+    for (const item of backup.data[store] || []) {
+      await tx.objectStore(store).put(item)
+    }
   }
-
-  // Importar controllers
-  for (const controle of backup.data.controllers) {
-    await tx.objectStore('controllers').put(controle)
-  }
-
-  // Importar vulnerabilities
-  for (const vuln of backup.data.vulnerabilities) {
-    await tx.objectStore('vulnerabilities').put(vuln)
-  }
-
-  // Importar configurações
-  for (const setting of backup.data.settings) {
-    await tx.objectStore('settings').put(setting)
-  }
-
   await tx.done
   console.log('✅ Backup importado com sucesso')
 }

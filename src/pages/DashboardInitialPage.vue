@@ -291,8 +291,14 @@ async function syncNow() {
   } catch (error) {
     $q.notify({
       type: 'negative',
-      message: `Erro: ${error.message}`,
-      icon: 'error',
+      message: `Falha na sincronização: ${error.message}`,
+      caption: 'Suas alterações continuam salvas localmente.',
+      icon: 'sync_problem',
+      timeout: 0,
+      actions: [
+        { label: 'Tentar novamente', color: 'white', handler: syncNow },
+        { label: 'Fechar', color: 'white' },
+      ],
     })
   }
 }

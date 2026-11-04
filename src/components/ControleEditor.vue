@@ -133,6 +133,17 @@
           row-key="id"
           flat
         >
+          <template v-slot:body-cell-synced="props">
+            <q-td key="synced" :props="props">
+              <q-icon
+                :name="props.row.synced ? 'cloud_done' : 'cloud_off'"
+                :color="props.row.synced ? 'positive' : 'orange'"
+                size="xs"
+              >
+                <q-tooltip>{{ props.row.synced ? 'Synchronized' : 'Not Synchronized' }}</q-tooltip>
+              </q-icon>
+            </q-td>
+          </template>
           <template v-slot:body-cell-actions="props">
             <q-td key="actions" :props="props">
               <q-btn icon="visibility"
@@ -208,6 +219,7 @@ const columns = [
   { name: 'dt_discover', label: 'Discovered', field: 'dt_discover', align: 'left', sortable: true, format: (val) => {
       return date.formatDate(val, 'DD/MM/YYYY HH:mm:ss');
     }, },
+  { name: 'synced', label: 'Sync', field: 'synced', align: 'center', sortable: true },
   { name: 'actions', label: 'Actions', field: 'actions', align: 'left' }
 ]
 const statusOptions = [
@@ -237,8 +249,8 @@ const dataTesteFormatted = computed(() => {
 })
 
 const dataAtualizacaoFormatted = computed(() => {
-  if (!localData.value.dt_updated) return 'Never'
-  return format(new Date(localData.value.dt_updated), 'dd/MM/yyyy HH:mm')
+  if (!props.controller.updated_at) return 'Never'
+  return format(new Date(props.controller.updated_at), 'dd/MM/yyyy HH:mm')
 })
 
 function openVulnerability(vuln) {
