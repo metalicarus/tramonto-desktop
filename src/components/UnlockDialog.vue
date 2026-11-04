@@ -115,10 +115,17 @@ async function recover() {
   if (!recoveryKey.value || newPassword.value.length < 8) return
   loading.value = true
   try {
-    await authStore.unlockWithRecoveryKey(recoveryKey.value, newPassword.value)
+    const newRecoveryKey = await authStore.unlockWithRecoveryKey(recoveryKey.value, newPassword.value)
     showRecovery.value = false
-    emit('unlocked')
-    $q.notify({ type: 'positive', message: 'Password reset successfully' })
+    $q.dialog({
+      title: '🔑 New Recovery Key',
+      message: `Password reset successfully. Your previous recovery key no longer works. Save this new one in a safe place, it will not be shown again:<br><br><strong>${newRecoveryKey}</strong>`,
+      html: true,
+      persistent: true,
+      ok: { label: 'I saved it', color: 'primary' },
+    }).onOk(() => {
+      emit('unlocked')
+    })
   } catch (error) {
     $q.notify({ type: 'negative', message: error.message })
   } finally {

@@ -1,9 +1,9 @@
 {
   "name": "tramonto",
   "version": "0.0.1",
-  "description": "Tramonto Mothafucker",
+  "description": "Privacy-first pentest management tool",
   "productName": "Tramonto",
-  "author": "metalicarus <mateus.silva@datainfo.inf>",
+  "author": "metalicarus <mateus.silva@datainfo.inf.br>",
   "type": "module",
   "private": true,
   "scripts": {

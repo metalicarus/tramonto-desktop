@@ -1,20 +1,19 @@
 // src/utils/git/adapters/web.js
 import { Octokit } from '@octokit/rest'
-import { GITHUB_CONFIG } from '../../../configs/github'
 
-function getOctokit() {
-  return new Octokit({ auth: GITHUB_CONFIG.token })
+function getOctokit(token) {
+  if (!token) throw new Error('GitHub token not configured')
+  return new Octokit({ auth: token })
 }
 
 function parseRepoUrl(repoUrl) {
-  const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/)
+  const match = repoUrl?.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/)
   if (!match) throw new Error('URL do repositório inválida')
-  return { owner: match[1], repo: match[2].replace('.git', '') }
+  return { owner: match[1], repo: match[2] }
 }
 
 async function getFileSha(octokit, owner, repo, filePath) {
   try {
-    console.log(owner, repo, filePath)
     const { data } = await octokit.repos.getContent({ owner, repo, path: filePath })
     return data.sha
   } catch {
@@ -27,9 +26,9 @@ export async function commitLocal(projectId, message) {
   return { success: true, message: message, files: 0 }
 }
 
-export async function pushFile(relativePath, data) {
-  const octokit = getOctokit()
-  const { owner, repo } = parseRepoUrl(GITHUB_CONFIG.repoUrl)
+export async function pushFile(token, repoUrl, relativePath, data) {
+  const octokit = getOctokit(token)
+  const { owner, repo } = parseRepoUrl(repoUrl)
 
   const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))))
   const sha = await getFileSha(octokit, owner, repo, relativePath)
@@ -44,14 +43,15 @@ export async function pushFile(relativePath, data) {
   })
 }
 
-export async function fullSync(token) {
+export async function fullSync(projectDir, token, repoUrl) {
   try {
-    const octokit = new Octokit({ auth: token || GITHUB_CONFIG.token })
-    const { owner, repo } = parseRepoUrl(GITHUB_CONFIG.repoUrl)
+    const octokit = getOctokit(token)
+    const { owner, repo } = parseRepoUrl(repoUrl)
     await octokit.repos.get({ owner, repo })
 
-    console.log('✅ Repositório acessível, sync pronto para uso')
-    return { success: true, message: 'Sync configurado' }
+    // O modo web ainda não grava os arquivos cifrados no repositório:
+    // retornar sucesso aqui marcaria tudo como sincronizado sem ter enviado nada.
+    return { success: false, message: 'GitHub sync is only available in the desktop app for now' }
   } catch (error) {
     console.error('❌ Erro no sync:', error)
     return { success: false, message: error.message }
@@ -60,15 +60,11 @@ export async function fullSync(token) {
 
 export async function cloneRepository(repoUrl, projectId, token) {
   try {
-    const octokit = new Octokit({ auth: token || GITHUB_CONFIG.token })
+    const octokit = getOctokit(token)
     const { owner, repo } = parseRepoUrl(repoUrl)
 
     const { data } = await octokit.repos.getContent({ owner, repo, path: '' })
 
-    console.log(
-      '✅ Repositório lido:',
-      data.map((f) => f.name),
-    )
     return { success: true, files: data }
   } catch (error) {
     console.error('❌ Erro ao clonar:', error)

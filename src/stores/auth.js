@@ -1,11 +1,22 @@
 import { defineStore } from 'pinia'
+import { markRaw } from 'vue'
 import { saveSetting, loadSetting } from 'src/utils/storage'
-import { hashPassword, verifyPassword, generateRecoveryKey } from 'src/utils/crypto'
+import {
+  hashPassword,
+  verifyPassword,
+  generateRecoveryKey,
+  generateVaultKey,
+  wrapVaultKey,
+  unwrapVaultKey,
+  unwrapRawVaultKey,
+  importVaultKey,
+} from 'src/utils/crypto'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     isUnlocked: false,
     masterPassword: null,
+    vaultKey: null,
     isConfigured: false,
     failedAttempts: 0,
     lockedUntil: null,
@@ -21,16 +32,33 @@ export const useAuthStore = defineStore('auth', {
       this.lockedUntil = await loadSetting('locked_until') || null
     },
 
-    async setupMasterPassword(password) {
+    async setupMasterPassword(password, rawVaultKey = generateVaultKey()) {
       const hash = await hashPassword(password)
       const recoveryKey = generateRecoveryKey()
       const recoveryHash = await hashPassword(recoveryKey)
       await saveSetting('master_password_hash', hash)
       await saveSetting('recovery_key_hash', recoveryHash)
+      await saveSetting('vault_key_by_password', await wrapVaultKey(rawVaultKey, password))
+      await saveSetting('vault_key_by_recovery', await wrapVaultKey(rawVaultKey, recoveryKey))
+      this.vaultKey = markRaw(await importVaultKey(rawVaultKey))
       this.masterPassword = password
       this.isConfigured = true
       this.isUnlocked = true
+      this.resetSessionTimer()
       return recoveryKey
+    },
+
+    async loadVaultKey(password) {
+      const wrapped = await loadSetting('vault_key_by_password')
+      if (wrapped) {
+        this.vaultKey = markRaw(await unwrapVaultKey(wrapped, password))
+        return
+      }
+      // Instalação anterior à vault key: cria agora. Sem cópia pela recovery key,
+      // que não existe em claro; ela é criada na próxima troca de senha.
+      const rawVaultKey = generateVaultKey()
+      await saveSetting('vault_key_by_password', await wrapVaultKey(rawVaultKey, password))
+      this.vaultKey = markRaw(await importVaultKey(rawVaultKey))
     },
 
     async unlock(password) {
@@ -47,11 +75,13 @@ export const useAuthStore = defineStore('auth', {
           const delays = [30, 300, 3600] // 30s, 5min, 1h
           const delay = delays[Math.min(level - 1, delays.length - 1)] * 1000
           this.lockedUntil = new Date(Date.now() + delay).toISOString()
-          await saveSetting('failed_attempts', this.failedAttempts)
           await saveSetting('locked_until', this.lockedUntil)
         }
+        // Grava a cada tentativa para que reiniciar o app não zere o contador
+        await saveSetting('failed_attempts', this.failedAttempts)
         throw new Error('Invalid password')
       }
+      await this.loadVaultKey(password)
       this.failedAttempts = 0
       this.lockedUntil = null
       this.masterPassword = password
@@ -65,11 +95,19 @@ export const useAuthStore = defineStore('auth', {
       const recoveryHash = await loadSetting('recovery_key_hash')
       const valid = await verifyPassword(recoveryKey, recoveryHash)
       if (!valid) throw new Error('Invalid recovery key')
-      await this.setupMasterPassword(newPassword)
+      const wrapped = await loadSetting('vault_key_by_recovery')
+      const rawVaultKey = wrapped ? await unwrapRawVaultKey(wrapped, recoveryKey) : undefined
+      this.failedAttempts = 0
+      this.lockedUntil = null
+      await saveSetting('failed_attempts', 0)
+      await saveSetting('locked_until', null)
+      // Devolve a nova recovery key: a anterior deixa de valer
+      return this.setupMasterPassword(newPassword, rawVaultKey)
     },
 
     lock() {
       this.masterPassword = null
+      this.vaultKey = null
       this.isUnlocked = false
     },
 

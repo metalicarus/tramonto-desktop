@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   writeEncryptedFile: (path, content) => ipcRenderer.invoke('fs:writeEncryptedFile', path, content),
   gitClone: (repoUrl, token, destDir) => ipcRenderer.invoke('git:clone', repoUrl, token, destDir),
   readDir: (dirPath) => ipcRenderer.invoke('fs:readDir', dirPath),
-  saveEvidence: (projectId, filename, base64Data) => ipcRenderer.invoke('fs:saveEvidence', projectId, filename, base64Data),
-  readEvidence: (filePath) => ipcRenderer.invoke('fs:readEvidence', filePath),
+  saveEvidence: (projectId, filename, encryptedContent) => ipcRenderer.invoke('fs:saveEvidence', projectId, filename, encryptedContent),
+  readEvidence: (projectId, filename) => ipcRenderer.invoke('fs:readEvidence', projectId, filename),
+  removeLegacyEvidence: (projectId, filename) => ipcRenderer.invoke('fs:removeLegacyEvidence', projectId, filename),
+  readEncryptedFile: (filePath) => ipcRenderer.invoke('fs:readEncryptedFile', filePath),
 })
