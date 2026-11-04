@@ -91,6 +91,8 @@ export default defineConfig((ctx) => {
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#devserver
     devServer: {
       // https: true,
+      // Só nesta máquina: sem isso o app de desenvolvimento fica acessível pela rede local
+      host: 'localhost',
       open: {
         app: { name: 'google-chrome' },
       },

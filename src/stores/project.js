@@ -225,6 +225,8 @@ export const useProjectStore = defineStore('project', {
         vulns.forEach((v) => {
           this.vulnerabilities[v.id] = v
         })
+        this.syncStatus.lastSync = this.currentProject.last_synced_at ? new Date(this.currentProject.last_synced_at) : null
+        this.syncStatus.error = null
         await this.updateUnsyncedCount()
       } catch (error) {
         console.error('Erro on load project:', error)
@@ -346,13 +348,14 @@ export const useProjectStore = defineStore('project', {
     },
 
     async saveVulnerability(vulnId, data) {
-      const vuln = {
+      // Cópia simples: o IndexedDB não aceita objetos reativos do Vue (DataCloneError)
+      const vuln = JSON.parse(JSON.stringify({
         ...data,
         id: vulnId || `VULN-${uuidv4().slice(0, 8)}`,
         project_id: this.currentProject.id,
         updated_at: new Date().toISOString(),
         synced: false,
-      }
+      }))
       this.vulnerabilities[vuln.id] = vuln
       await saveItem('vulnerabilities', vuln)
       await this.updateUnsyncedCount()
@@ -458,6 +461,7 @@ export const useProjectStore = defineStore('project', {
         this.vulnerabilities[raw.id] = raw
       }
       this.currentProject.settings_synced = true
+      this.currentProject.last_synced_at = new Date().toISOString()
       await saveItem('projects', JSON.parse(JSON.stringify(this.currentProject)))
     },
 

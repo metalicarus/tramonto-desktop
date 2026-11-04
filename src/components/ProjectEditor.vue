@@ -29,7 +29,8 @@
             <q-input v-model="newProjectForm.start_date" label="Start Date" type="date" outlined />
           </div>
           <div class="col-6">
-            <q-input v-model="newProjectForm.end_date" label="End Date" type="date" outlined />
+            <q-input v-model="newProjectForm.end_date" label="End Date" type="date" outlined
+                     :rules="[() => isValidPeriod || 'Must be on or after the start date']" />
           </div>
         </div>
 
@@ -68,8 +69,13 @@ const newProjectForm = ref({
   environment: 'approval',
   repository_url: '',
 })
+// Datas ISO (yyyy-mm-dd) comparam corretamente como texto
+const isValidPeriod = computed(() => {
+  const { start_date, end_date } = newProjectForm.value
+  return !start_date || !end_date || end_date >= start_date
+})
 const isFormValid = computed(() => {
-  return newProjectForm.value.name && newProjectForm.value.customer
+  return newProjectForm.value.name && newProjectForm.value.customer && isValidPeriod.value
 })
 const isImportFormValid = computed(() => {
   return importForm.value.repository_url && importForm.value.token

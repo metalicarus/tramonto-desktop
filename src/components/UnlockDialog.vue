@@ -23,7 +23,7 @@
           />
         </template>
       </q-input>
-      <div v-if="lockMessage" class="text-negative text-caption">{{ lockMessage }}</div>
+      <div v-if="lockMessage && !lockCountdown" class="text-negative text-caption">{{ lockMessage }}</div>
       <div v-if="lockCountdown" class="text-warning text-caption">{{ lockCountdown }}</div>
     </q-card-section>
 
@@ -47,10 +47,17 @@
             outlined
             :rules="[val => val.length >= 8 || 'Minimum 8 characters']"
           />
+          <q-input
+            v-model="newPasswordConfirm"
+            label="Confirm New Master Password"
+            type="password"
+            outlined
+            :rules="[val => val === newPassword || 'Passwords do not match']"
+          />
         </q-card-section>
         <q-card-actions align="right">
           <q-btn flat label="Cancel" v-close-popup />
-          <q-btn color="warning" label="Recover" :loading="loading" @click="recover" />
+          <q-btn color="warning" label="Recover" :loading="loading" :disable="!canRecover" @click="recover" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -74,13 +81,16 @@ const lockCountdown = ref('')
 const showRecovery = ref(false)
 const recoveryKey = ref('')
 const newPassword = ref('')
+const newPasswordConfirm = ref('')
+const canRecover = computed(() =>
+  !!recoveryKey.value.trim() && newPassword.value.length >= 8 && newPassword.value === newPasswordConfirm.value,
+)
 const now = ref(new Date())
 let nowTimer = null
 
 const isLocked = computed(() => {
-  // if (!authStore.lockedUntil) return false
-  // return now.value < new Date(authStore.lockedUntil)
-  return false
+  if (!authStore.lockedUntil) return false
+  return now.value < new Date(authStore.lockedUntil)
 })
 let lockTimer = null
 
@@ -112,10 +122,10 @@ async function unlock() {
 }
 
 async function recover() {
-  if (!recoveryKey.value || newPassword.value.length < 8) return
+  if (!canRecover.value) return
   loading.value = true
   try {
-    const newRecoveryKey = await authStore.unlockWithRecoveryKey(recoveryKey.value, newPassword.value)
+    const newRecoveryKey = await authStore.unlockWithRecoveryKey(recoveryKey.value.trim(), newPassword.value)
     showRecovery.value = false
     $q.dialog({
       title: '🔑 New Recovery Key',
