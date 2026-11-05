@@ -116,6 +116,7 @@ import { ProjectMetadata, ControllersTemplate } from 'src/schemas/project'
 import {toRaw} from "vue";
 import {useAuthStore} from "stores/auth.js";
 import { saveEvidence, loadEvidence, removeEvidence, evidenceFileKey } from 'src/utils/evidence.js'
+import { projectRepoDir } from 'src/utils/repository.js'
 
 /**
  * Cópia do projeto enviada ao repositório: sem o token de quem sincronizou,
@@ -270,7 +271,8 @@ export const useProjectStore = defineStore('project', {
       const { decrypt } = await import('../utils/crypto.js')
 
       const baseDir = await getBaseDir()
-      const repoName = repoUrl.split('/').pop().replace('.git', '')
+      const repoName = repoUrl.trim().replace(/\/+$/, '').split('/').pop().replace(/\.git$/, '')
+      if (!repoName) throw new Error('Invalid repository URL')
       const destDir = `${baseDir}/${repoName}`
 
       await cloneRepo(repoUrl, token, destDir)
@@ -280,15 +282,16 @@ export const useProjectStore = defineStore('project', {
       const controllers = []
       const vulns = []
 
-      // 1. Processa JSONs
+      // 1. Processa JSONs. relativePath sempre usa "/", inclusive no Windows
       for (const file of files) {
-        if (!file.path.endsWith('.json')) continue
+        const rel = file.relativePath
+        if (!rel.endsWith('.json')) continue
         const decrypted = await decrypt(file.content, authStore.masterPassword)
-        if (file.path.endsWith('project.json')) {
+        if (rel === 'project.json') {
           project = decrypted
-        } else if (file.path.includes('/controllers/')) {
+        } else if (rel.startsWith('controllers/')) {
           controllers.push(decrypted)
-        } else if (file.path.includes('/vulnerabilities/')) {
+        } else if (rel.startsWith('vulnerabilities/')) {
           vulns.push(decrypted)
         }
       }
@@ -304,10 +307,10 @@ export const useProjectStore = defineStore('project', {
 
       // 2. Processa evidências
       for (const file of files) {
-        if (!file.path.includes('/evidence/')) continue
+        if (!file.relativePath.startsWith('evidence/')) continue
 
         const decrypted = await decrypt(file.content, authStore.masterPassword)
-        const fileKey = file.path.split(/[\\/]/).pop().replace(/\.enc$/, '')
+        const fileKey = file.relativePath.split('/').pop().replace(/\.enc$/, '')
         await saveEvidence(project.id, decrypted, authStore.vaultKey, fileKey)
       }
 
@@ -381,13 +384,10 @@ export const useProjectStore = defineStore('project', {
         const { fullSync } = await import('../utils/git/index.js')
 
         const password = authStore.masterPassword
-        const projectSlug = this.currentProject.name
-          .toLowerCase()
-          .replace(/\s+/g, '-')
-          .replace(/[^a-z0-9-]/g, '')
-
         const baseDir = await getBaseDir()
-        const repoDir = this.currentProject.settings.repoDir || `${projectSlug}-${this.currentProject.id}`
+        const repoDir = projectRepoDir(this.currentProject)
+        // Fixa a pasta no primeiro sync: renomear o projeto não pode criar outra
+        if (!this.currentProject.settings.repoDir) this.currentProject.settings.repoDir = repoDir
         const projectDir = `${baseDir}/${repoDir}`
         await writeEncryptedJSONFile(
           `${projectDir}/project.json`,
