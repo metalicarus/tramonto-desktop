@@ -4,6 +4,7 @@ import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { promises as fs } from 'node:fs'
 import { simpleGit } from 'simple-git'
+import { createPathRules } from './paths.js'
 
 const platform = process.platform || os.platform()
 const currentDir = fileURLToPath(new URL('.', import.meta.url))
@@ -14,27 +15,13 @@ const REPOS_DIR = path.join(TRAMONTO_DIR, 'repositories')
 const EVIDENCE_DIR = path.join(TRAMONTO_DIR, 'evidence')
 const GITHUB_URL_PATTERN = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/
 
-/**
- * Garante que o caminho vindo do renderer fique dentro de baseDir
- */
-function insideDir(baseDir, target) {
-  const resolved = path.resolve(target)
-  if (resolved !== baseDir && !resolved.startsWith(baseDir + path.sep)) {
-    throw new Error(`Path outside ${baseDir} is not allowed`)
-  }
-  return resolved
-}
+const { insideDir, safeSegment, toPosixRelative } = createPathRules(path)
 
-/**
- * Aceita só um nome simples (sem barras nem "..")
- */
-function safeSegment(name) {
-  const value = String(name ?? '')
-  if (!value || value === '.' || value === '..' || value !== path.basename(value) || value.includes('\\')) {
-    throw new Error(`Invalid file name: ${name}`)
-  }
-  return value
-}
+// Conteúdo cifrado é opaco: sem conversão de fim de linha, e com caminhos longos no Windows
+const REPO_GIT_CONFIG = [
+  ['core.autocrlf', 'false'],
+  ['core.longpaths', 'true'],
+]
 
 function evidencePath(projectId, filename) {
   return path.join(EVIDENCE_DIR, safeSegment(projectId), safeSegment(filename))
@@ -93,6 +80,7 @@ ipcMain.handle('git:fullSync', async (_, projectDir, token, repoUrl, message) =>
 
 ipcMain.handle('git:clone', async (_, repoUrl, token, destDir) => {
   const dest = insideDir(REPOS_DIR, destDir)
+  if (dest === path.resolve(REPOS_DIR)) throw new Error('Invalid repository folder')
   assertGithubUrl(repoUrl)
   try {
     const stat = await fs.stat(dest)
@@ -111,7 +99,7 @@ ipcMain.handle('git:clone', async (_, repoUrl, token, destDir) => {
   }
   await fs.mkdir(dest, { recursive: true })
   const git = gitWithToken(REPOS_DIR, token)
-  await git.clone(repoUrl, dest)
+  await git.clone(repoUrl, dest, REPO_GIT_CONFIG.flatMap(([key, value]) => ['--config', `${key}=${value}`]))
   return { success: true }
 })
 
@@ -139,6 +127,7 @@ ipcMain.handle('fs:removeEvidence', async (_, projectId, filename) => {
 })
 
 ipcMain.handle('fs:readDir', async (_, dirPath) => {
+  const root = insideDir(REPOS_DIR, dirPath)
   async function readRecursive(dir) {
     const entries = await fs.readdir(dir, { withFileTypes: true })
     const files = []
@@ -149,12 +138,12 @@ ipcMain.handle('fs:readDir', async (_, dirPath) => {
         files.push(...await readRecursive(fullPath))
       } else if (entry.name.endsWith('.json') || entry.name.endsWith('.enc')) {
         const content = await fs.readFile(fullPath, 'utf-8')
-        files.push({ path: fullPath, content })
+        files.push({ path: fullPath, relativePath: toPosixRelative(root, fullPath), content })
       }
     }
     return files
   }
-  return readRecursive(insideDir(REPOS_DIR, dirPath))
+  return readRecursive(root)
 })
 
 async function isNewRepository(git, repoUrl) {
@@ -175,13 +164,20 @@ async function setOrigin(git, repoUrl) {
   }
 }
 
-async function initAndPush(git, repoUrl, message) {
+async function prepareRepository(git, repoUrl) {
   const isRepo = await git.checkIsRepo()
   if (!isRepo) await git.init(['--initial-branch=main'])
 
+  for (const [key, value] of REPO_GIT_CONFIG) {
+    await git.addConfig(key, value)
+  }
   await git.addConfig('user.name', 'Tramonto')
   await git.addConfig('user.email', 'tramonto@app.com')
   await setOrigin(git, repoUrl)
+}
+
+async function initAndPush(git, repoUrl, message) {
+  await prepareRepository(git, repoUrl)
 
   await git.add('.')
   const status = await git.status()
@@ -192,7 +188,8 @@ async function initAndPush(git, repoUrl, message) {
 }
 
 async function pullAndPush(git, repoUrl, message) {
-  await setOrigin(git, repoUrl)
+  // A pasta local pode ainda não ser um repositório quando o remoto já tem conteúdo
+  await prepareRepository(git, repoUrl)
   await git.pull('origin', 'main', ['--no-rebase', '--allow-unrelated-histories'])
   await git.add('.')
   const status = await git.status()
