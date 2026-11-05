@@ -3,7 +3,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { promises as fs } from 'node:fs'
-import simpleGit from 'simple-git'
+import { simpleGit } from 'simple-git'
 
 const platform = process.platform || os.platform()
 const currentDir = fileURLToPath(new URL('.', import.meta.url))
